@@ -756,6 +756,19 @@ class LessonTests(unittest.TestCase):
         self.run_ll(client)
         self.assertGreater(len(client.responses.calls), n)                   # only the changed one + playbook
 
+    def test_state_files_saved_with_a_bom_are_still_read(self):
+        """14 Nov: astra_lessons.json and astra_playbook.json carried a UTF-8 BOM (saved by an editor) and the
+        tool stopped at start with 'Unexpected UTF-8 BOM', so no new lesson could be studied."""
+        client = FakeClient()
+        self.assertEqual(self.run_ll(client), 0)
+        n = len(client.responses.calls)
+        for name in ("astra_lessons.json", "astra_playbook.json"):
+            p = self.folder / name
+            p.write_bytes(b"\xef\xbb\xbf" + p.read_bytes())
+        self.assertEqual(self.run_ll(client), 0)                             # both read; nothing studied again
+        self.assertEqual(len(client.responses.calls), n)
+        self.assertEqual(self.run_ll(client, "--report-only"), 0)
+
     def test_concept_lesson_teaches_definitions_not_outcomes(self):
         (self.folder / "004_fvg.png").write_bytes(b"\x89PNG\r\n\x1a\nfake")
         (self.folder / "004_fvg.txt").write_text("TYPE: CONCEPT\nQUESTION: Why is this an FVG?\n"

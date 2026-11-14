@@ -43,7 +43,7 @@ The runtime journal from 8–9 Oct 2026 shows the problem V6 fixes. Astra built 
 
 ## 1. Market memory
 
-Memory is stored in `runtime/astra_memory.sqlite3` and lives in the state directory. The `gold_memory.db` file in `data/` is still the read-only bootstrap seed.
+Memory is stored in `runtime/astra_memory.sqlite3` and lives in the state directory. An optional `data/gold_memory.db` file, if you create one, is still read as a read-only bootstrap seed.
 
 **Zones.** Each zone comes from a confirmed swing pivot on 1day, 4h or 1h: 3/3 bars on 1day and 4h, 4/4 bars on 1h. A zone spans from the wick extreme to the body edge, capped at 0.35 ATR of its timeframe. If a new pivot overlaps an existing zone, it is merged into that zone (a lower-timeframe zone is promoted) instead of being duplicated. Astra's own validated 1h+ support/resistance levels also join, marked `source = ASTRA`, and their history is replayed through the closed candles.
 

@@ -1,5 +1,5 @@
 {
-  "_comment": "Auto-trader 1.10 (DEMO). Market settings come from v6_config. source signal_bot = no Claude calls. Ideas are graded into tiers A/B/C by Python and sized by tiers.risk_pct. lab_mode (demo only) trades every rejected idea at the minimum lot and records the rules it broke. See docs/AUTO_TRADER.md.",
+  "_comment": "Auto-trader 1.20 (DEMO). Reference copy of every setting. Market settings come from v6_config. source signal_bot = no Claude calls. Ideas are graded into tiers A/B/C by Python and sized by tiers.risk_pct. lab_mode (demo only) trades every rejected idea at the minimum lot and records the rules it broke. See docs/AUTO_TRADER.md. The engines added since 1.10 (overnight, weakness, LTF, 1H trend, breakout lab, scalp lab, Python ideas, news straddle) are listed with their defaults; turn each on by its own mode.",
   "v6_config": "config/gold_v5_config.json",
   "source": "signal_bot",
   "signal_bot_signals": true,
@@ -144,5 +144,192 @@
   "lab_max_open": 6,
   "lab_max_per_day": 20,
   "lab_drawdown_kill_pct": 15.0,
-  "lab_unconfirmed_entry": true
+  "lab_unconfirmed_entry": true,
+  "user_plan_auto_study": true,
+  "lab_keep_after_tp_touch": false,
+  "lab_entry": "plain",
+  "pre_news_guard": {
+    "mode": "off",
+    "minutes": null,
+    "be_at_r": 1.0
+  },
+  "trade_protect": {
+    "mode": "off",
+    "be_at_r": 1.0,
+    "lock_at_r": 1.5,
+    "lock_r": 0.5,
+    "near_tp_frac": 0.85,
+    "near_tp_exit": true,
+    "check_seconds": 10
+  },
+  "opposite_trades": {
+    "mode": "off",
+    "max_wait_minutes": 120,
+    "check_seconds": 10,
+    "trend_lookback": 60,
+    "swing_k": 2,
+    "recheck_pending": true
+  },
+  "scalp_lab": {
+    "mode": "off",
+    "variant": "PB5M_rr2.0",
+    "max_per_day": 12,
+    "daily_loss_usd": 25.0,
+    "max_spread": 0.5,
+    "bars": 400
+  },
+  "news_mode": "lock",
+  "news_strict_risk_pct": 0.25,
+  "holiday_trading": "block",
+  "python_ideas": {
+    "mode": "off",
+    "until": null,
+    "min_tests": 1,
+    "timeframes": [
+      "1week",
+      "1day",
+      "4h",
+      "1h"
+    ],
+    "smc_timeframes": [
+      "1day",
+      "4h",
+      "1h"
+    ],
+    "max_distance_atr15": 8.0,
+    "stop_buffer_atr15": 0.3,
+    "min_rr": 2.0,
+    "max_tp_r": 4.0,
+    "risk_pct": null,
+    "max_ideas": 3,
+    "reentry_hours": 12,
+    "telegram": false
+  },
+  "breakout_lab": {
+    "mode": "off",
+    "sides": [
+      "BUY",
+      "SELL"
+    ]
+  },
+  "limit_entry_risk_pct": null,
+  "zone_score": {
+    "mode": "off",
+    "band_r": 0.5,
+    "cap_atr": 0.5,
+    "cache_seconds": 60
+  },
+  "lab_drop_rule": "contradicted",
+  "lab_tp_touch_remap": false,
+  "news_straddle": false,
+  "straddle_events": [
+    "fed interest rate",
+    "fomc statement",
+    "federal funds",
+    "non-farm",
+    "nonfarm",
+    "cpi",
+    "core pce",
+    "gdp"
+  ],
+  "straddle_place_minutes": 2,
+  "straddle_offset_atr": 0.5,
+  "straddle_add_atr": 1.0,
+  "straddle_stop_atr": 1.0,
+  "straddle_min_stop": 3.0,
+  "straddle_tp1_r": 1.0,
+  "straddle_tp2_r": 3.0,
+  "straddle_expire_minutes": 15,
+  "straddle_max_hold_minutes": 30,
+  "lab_risk_pct": 0.0,
+  "lab_max_total_risk_pct": 1.5,
+  "overnight": {
+    "mode": "off",
+    "magic": 40004,
+    "entry_ny": "18:45",
+    "window_minutes": 30,
+    "exit_ny": "08:00",
+    "stop_atr": 3.0,
+    "risk_pct": 0.25,
+    "max_spread": 0.6,
+    "rules": [
+      {
+        "name": "BULL_LONG",
+        "macro": "BULLISH",
+        "direction": "BUY",
+        "mode": "live"
+      },
+      {
+        "name": "BEAR_SHORT",
+        "macro": "BEARISH",
+        "direction": "SELL",
+        "mode": "off"
+      },
+      {
+        "name": "RANGE_SHORT",
+        "macro": "MIXED",
+        "direction": "SELL",
+        "mode": "off"
+      }
+    ]
+  },
+  "weakness_lab": {
+    "mode": "off",
+    "sides": [
+      "SELL"
+    ],
+    "min_run": 3,
+    "touch_window": 8,
+    "equal_tol_atr": 0.25,
+    "zone_slack_atr": 0.25,
+    "stop_atr": 0.1,
+    "min_rr": 2.0,
+    "max_setup_4h": 12,
+    "max_hold_days": 5,
+    "local_high_lookback": 20,
+    "zone_types": [
+      "OB",
+      "BREAKER",
+      "FVG"
+    ],
+    "zone_tfs": [
+      60,
+      30,
+      15,
+      5
+    ],
+    "respect_news_lock": true
+  },
+  "ltf_lab": {
+    "mode": "off",
+    "swing_k": 2,
+    "stop_buffer_atr15": 0.1,
+    "min_rr": 2.0,
+    "pool_tol_atr15": 0.1,
+    "pool_path_r": 1.0,
+    "pool_path_blocks": false,
+    "stop_pool_atr15": 0.3,
+    "require_sweep": false,
+    "watch_hours": 12,
+    "bars": 300,
+    "news_guard_minutes": 60,
+    "one_per_zone": true,
+    "recheck_map": true
+  },
+  "h1_trend_lab": {
+    "mode": "off",
+    "sides": [
+      "BUY",
+      "SELL"
+    ],
+    "zone_kinds": [
+      "FVG",
+      "ORDER_BLOCK_CANDIDATE"
+    ],
+    "stop_buffer_atr15": 0.3,
+    "min_rr": 2.0,
+    "max_distance_atr15": 4.0,
+    "max_zone_age_hours": 72
+  },
+  "expect_signal_bot": true
 }

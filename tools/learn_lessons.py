@@ -301,7 +301,7 @@ def run(args, client=None):
     folder = Path(args.folder)
     folder.mkdir(parents=True, exist_ok=True)
     store = folder / "astra_lessons.json"
-    done = json.loads(store.read_text(encoding="utf-8")) if store.is_file() else {}
+    done = json.loads(store.read_text(encoding="utf-8-sig")) if store.is_file() else {}   # -sig: a BOM from an editor
     lessons = find_lessons(folder)
     errors, spent = [], 0
     if not lessons:
@@ -316,7 +316,7 @@ def run(args, client=None):
         else:
             todo.append((lid, image, text, fp))
     playbook_path = folder / "astra_playbook.json"
-    playbook = json.loads(playbook_path.read_text(encoding="utf-8")) if playbook_path.is_file() else None
+    playbook = json.loads(playbook_path.read_text(encoding="utf-8-sig")) if playbook_path.is_file() else None
     if not args.report_only and todo:
         client = client or make_client(c)
         saved = (AN.load_analyst(c, M.ROOT) if c.get("analyst_provider") == "anthropic"

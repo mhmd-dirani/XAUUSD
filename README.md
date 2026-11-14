@@ -46,7 +46,6 @@ Forex_Bot_Trader/
 ├── scripts/run.ps1              start the signal bot
 ├── scripts/selftest.ps1         run the signal bot's offline tests
 ├── scripts/run_trader.ps1       start the auto-trader (also trader_check / trader_report / trader_selftest)
-├── data/                        optional extras (calendar Excel view)
 ├── tests/                       offline tests (no MT5, network, OpenAI or Telegram needed)
 ├── requirements.txt
 └── CHANGELOG.md
@@ -55,6 +54,7 @@ Forex_Bot_Trader/
 The bot creates these folders by itself. You can delete them at any time; they are rebuilt.
 - `runtime/`: live state (journal, market map, Astra memory and analysis).
 - `runtime_dryrun/`: dry-run output.
+- `data/`: created by `tools/mt5_calendar_to_excel.py` for the optional Excel view of the calendar.
 
 ## First-time setup (Windows)
 

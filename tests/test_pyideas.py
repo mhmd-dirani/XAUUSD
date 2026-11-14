@@ -1,5 +1,6 @@
-"""1.20 (12 Nov): Python's own trade ideas from the signal bot's market memory - a 10-day Python-only test while the
-Anthropic credit is empty. Same trader rules as Astra's ideas; separate ids / strategies; capped risk."""
+"""Python's own trade ideas from the signal bot's market memory (autotrader/pyideas.py).
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import sys
@@ -9,13 +10,25 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
-from autotrader import bridge as BR, pyideas as PI, settings  # noqa: E402
+try:
+    import astra_analysis  # noqa: F401,E402
+except ImportError:
+    sys.modules["astra_analysis"] = types.ModuleType("astra_analysis")
+sys.modules.setdefault("astra_anthropic", types.SimpleNamespace(model_name=lambda v6: "claude-opus-5-5",
+                                                                  EFFORTS=("low", "medium", "high")))
+from autotrader import alerts, app as AP, bridge as BR, pyideas as PI, settings  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.20 (12 Nov): Python's own trade ideas from the signal bot's market memory - a 10-day Python-only test while the
+# Anthropic credit is empty. Same trader rules as Astra's ideas; separate ids / strategies; capped risk.
+# ----------------------------------------------------------------------------------------------------------------------
 NOW = datetime(2026, 11, 12, 10, 5, tzinfo=UTC)
 CFG = dict(PI.DEFAULTS, mode="only", max_tp_r=10.0)
 
@@ -201,6 +214,65 @@ class SettingsTest(unittest.TestCase):
                    {"risk_pct": 2.0}, {"max_ideas": 0}, {"x": 1}):
             with self.assertRaises(ValueError, msg=str(kw)):
                 self._load(python_ideas=dict({"mode": "only"}, **kw))
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.20.3 (13 Nov): less noise - no hourly Python-idea Telegram by default, one entry per Python zone per 12 h,
+# and no Python limit whose TP1 price has almost reached already.
+# ----------------------------------------------------------------------------------------------------------------------
+NOW_13NOV = datetime(2026, 11, 13, 16, 0, tzinfo=UTC)
+
+
+class IdeaNoiseTest(unittest.TestCase):
+    def setUp(self):
+        self._t, self._e = PI.alerts.trade, PI.alerts.error
+        self.sent = []
+        PI.alerts.trade = lambda text, short=None: self.sent.append(text)
+        PI.alerts.error = lambda text: None
+
+    def tearDown(self):
+        PI.alerts.trade, PI.alerts.error = self._t, self._e
+
+    def test_no_hourly_telegram_by_default(self):
+        e = PI.PyIdeas({"python_ideas": {"mode": "only"}, "idea_max_age_minutes": 200}, _App(NOW_13NOV - timedelta(minutes=70)))
+        self.assertTrue(e.analysis(NOW_13NOV)["ideas"])
+        self.assertEqual(self.sent, [])
+        e = PI.PyIdeas({"python_ideas": {"mode": "only", "telegram": True}, "idea_max_age_minutes": 200},
+                       _App(NOW_13NOV - timedelta(minutes=70)))
+        e.analysis(NOW_13NOV)
+        self.assertEqual(len(self.sent), 1)
+
+    def test_target_almost_reached_is_skipped(self):
+        cfg = dict(PI.DEFAULTS, max_tp_r=10.0)
+        sell_zone = [{"id": "R", "kind": "SR", "timeframe": "4h", "role": "RESISTANCE", "status": "ACTIVE",
+                      "low": 3909.06, "high": 3924.72, "tests": 2},
+                     {"id": "S1", "kind": "SR", "timeframe": "1h", "role": "SUPPORT", "status": "ACTIVE",
+                      "low": 3868.0, "high": 3872.16, "tests": 1},
+                     {"id": "S2", "kind": "SR", "timeframe": "4h", "role": "SUPPORT", "status": "ACTIVE",
+                      "low": 3850.0, "high": 3859.0, "tests": 2}]
+        sell = next(i for i in PI.ideas(sell_zone, 3873.49, 5.0, cfg) if i["direction"] == "SELL")
+        self.assertEqual(sell["targets"][0], 3859.0)                 # not 3872.16, 1.3 below price
+        far = next(i for i in PI.ideas(sell_zone, 3890.0, 5.0, cfg) if i["direction"] == "SELL")
+        self.assertEqual(far["targets"][0], 3872.16)
+
+
+class ReentryTest(unittest.TestCase):
+    def _me(self, rows, hours=12):
+        me = AP.App.__new__(AP.App)
+        me.pyideas = types.SimpleNamespace(cfg={"reentry_hours": hours})
+        me.state = types.SimpleNamespace(setup_orders_since=lambda sid, since, lab=False:
+                                         [r for r in rows if r["setup_id"] == sid and r["created_utc"] >= since])
+        return me
+
+    def test_one_entry_per_zone_per_12h(self):
+        rows = [{"setup_id": "PY-SELL-3909", "created_utc": "2026-11-12T19:25:03Z", "fill_utc": "2026-11-13T06:20:00Z"},
+                {"setup_id": "PY-BUY-3873", "created_utc": "2026-11-13T14:00:01Z", "fill_utc": None}]
+        me = self._me(rows)
+        self.assertIsNone(me.python_zone_traded("PY-SELL-3909", NOW_13NOV))          # created 20.6 h ago: outside 12 h
+        rows[0]["created_utc"] = "2026-11-13T06:00:00Z"
+        self.assertIn("already traded", me.python_zone_traded("PY-SELL-3909", NOW_13NOV))
+        self.assertIsNone(me.python_zone_traded("PY-BUY-3873", NOW_13NOV))           # placed but never filled: may retry
+        self.assertIsNone(self._me(rows, hours=0).python_zone_traded("PY-SELL-3909", NOW_13NOV))
 
 
 if __name__ == "__main__":

@@ -1,25 +1,35 @@
-"""1.10 regression tests: session-sweep confirmation, in-zone market entry, lab mode, owner-plan stop floor."""
+"""Lab mode (rule experiments on the demo account at the minimum lot): tags, plans, safety, sizing, the news
+straddle, duplicate handling, broker/journal reconciliation, kept limits and the minimum-lot TP1.
+Offline: no MT5, no network, no Claude, no Telegram."""
 
 from __future__ import annotations
 
+import json
 import sys
 import tempfile
+import types
 import unittest
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from types import SimpleNamespace
 
 HERE = Path(__file__).resolve().parent
-sys.path.insert(0, str(HERE.parent / "src"))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
-import user_plans as UP                       # noqa: E402
-from autotrader import bridge as BR           # noqa: E402
-from autotrader import lab as LB              # noqa: E402
-from autotrader import sessions as SS         # noqa: E402
-from autotrader import settings               # noqa: E402
-from autotrader.state import State            # noqa: E402
+import user_plans as UP  # noqa: E402
+from autotrader import alerts, bridge as BR, executor as EX, lab as LB, sessions as SS, settings  # noqa: E402
+from autotrader import straddle as STR  # noqa: E402
+from autotrader.state import State  # noqa: E402
+from test_overnight import _JournalState, _Market as _OvernightMarket, _Pos  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.10 regression tests: session-sweep confirmation, in-zone market entry, lab mode, owner-plan stop floor.
+# ----------------------------------------------------------------------------------------------------------------------
 T0 = datetime(2026, 10, 26, 14, 0, tzinfo=UTC)
 
 
@@ -224,10 +234,6 @@ class OwnerPlanStop(unittest.TestCase):
         self.assertIsNone(UP.check(good, price=3993.0, atr1h=8.0, min_rr=2.0))
 
 
-if __name__ == "__main__":
-    unittest.main(verbosity=2)
-
-
 class _FakeMarket:
     symbol = "XAUUSD"
 
@@ -412,9 +418,6 @@ class NewsCandleTests(unittest.TestCase):
         after = bar(datetime(2026, 10, 27, 13, 0, tzinfo=UTC), 4027.0, 4031.0, 4024.0, 4025.0)
         self.assertNotEqual(BR.confirmation(sell, [spike, after], lock_end - timedelta(seconds=1))[0], "invalidated")
 
-
-from autotrader import straddle as STR  # noqa: E402
-
 FOMC_CAL = {"fetched_at": "2026-10-28T17:55:00Z", "events": [
     {"time": "2026-10-28T14:30:00+00:00", "impact": "HIGH", "title": "EIA Crude Oil Stocks Change"},
     {"time": "2026-10-28T18:00:00+00:00", "impact": "HIGH", "title": "Fed Interest Rate Decision"},
@@ -596,3 +599,603 @@ class LabSizing(unittest.TestCase):
                                      "lab_mode": True, "lab_risk_pct": 0.5, "lab_max_total_risk_pct": 0.2}), encoding="utf-8")
             with self.assertRaises(ValueError):
                 settings.load(p)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.10.6 regression tests: lab geometry dedupe and broker/journal reconciliation. Offline, no MT5, no Telegram.
+# ----------------------------------------------------------------------------------------------------------------------
+class LabDuplicateTest(unittest.TestCase):
+    def order(self, direction="BUY", entry=4043.0, sl=4027.5):
+        return {"direction": direction, "entry_price": entry, "stop_loss": sl}
+
+    def working(self, ticket, setup_id, direction="BUY", entry=4043.0, sl=4027.5, lab=1):
+        return {"ticket": ticket, "setup_id": setup_id, "direction": direction, "entry": entry, "sl": sl, "lab": lab,
+                "status": "PENDING"}
+
+    def test_same_geometry_under_another_setup_id_is_a_duplicate(self):
+        """28 Oct: LAB-BUY-4039 and LAB-BUY-4042 were the same order."""
+        active = [self.working(59510593, "LAB-BUY-4039")]
+        dup = LB.duplicate_of(self.order(), active, tol=2.0)
+        self.assertIsNotNone(dup)
+        self.assertEqual(dup["setup_id"], "LAB-BUY-4039")
+
+    def test_within_tolerance_counts(self):
+        active = [self.working(1, "LAB-BUY-4040", entry=4041.5, sl=4026.0)]
+        self.assertIsNotNone(LB.duplicate_of(self.order(), active, tol=2.0))
+
+    def test_outside_tolerance_is_not_a_duplicate(self):
+        active = [self.working(1, "LAB-BUY-4050", entry=4050.0, sl=4034.0)]
+        self.assertIsNone(LB.duplicate_of(self.order(), active, tol=2.0))
+
+    def test_other_direction_is_not_a_duplicate(self):
+        active = [self.working(1, "LAB-SELL-4043", direction="SELL")]
+        self.assertIsNone(LB.duplicate_of(self.order(), active, tol=2.0))
+
+    def test_live_orders_never_block_a_lab_sample(self):
+        """The live track and the lab are separate tracks: a live order at the same level is not a lab duplicate."""
+        active = [self.working(1, "IDEA-BUY-4043", lab=0)]
+        self.assertIsNone(LB.duplicate_of(self.order(), active, tol=2.0))
+
+    def test_stop_moved_means_a_different_order(self):
+        active = [self.working(1, "LAB-BUY-4043", sl=4020.0)]
+        self.assertIsNone(LB.duplicate_of(self.order(), active, tol=2.0))
+
+
+class _Item:
+    def __init__(self, ticket, magic=40001, identifier=None, comment="", volume=0.04):
+        self.ticket, self.magic, self.identifier, self.comment, self.volume = ticket, magic, identifier, comment, volume
+
+
+class _ReconcileState:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def all_orders(self):
+        return list(self.rows)
+
+
+class ReconcileTest(unittest.TestCase):
+    def setUp(self):
+        self.errors = []
+        self._orig = alerts.error
+        alerts.error = lambda msg: self.errors.append(msg)
+        c = {"magic": 40001, "magic_lab": 40003, "lab_mode": True}
+        self.x = EX.Executor(c, market=None, state=_ReconcileState([
+            {"ticket": 59507599, "position_ticket": None},        # the 28 Oct order: journalled, alert said "failed"
+            {"ticket": 59700433, "position_ticket": 59700433},
+            {"ticket": 59649141, "position_ticket": 900001},      # a fill whose position ticket differs
+        ]))
+
+    def tearDown(self):
+        alerts.error = self._orig
+
+    def test_known_tickets_raise_nothing(self):
+        pending = {59507599: _Item(59507599)}
+        positions = {59700433: _Item(59700433), 900001: _Item(900001, identifier=59649141)}
+        self.assertEqual(self.x.reconcile(pending, positions), [])
+        self.assertEqual(self.errors, [])
+
+    def test_position_known_only_by_identifier(self):
+        positions = {777: _Item(777, identifier=59649141)}
+        self.assertEqual(self.x.reconcile({}, positions), [])
+
+    def test_unknown_broker_order_is_reported_once(self):
+        pending = {123456: _Item(123456, comment="B:IDEA-SELL-4020")}
+        self.assertEqual(self.x.reconcile(pending, {}), [123456])
+        self.assertEqual(len(self.errors), 1)
+        self.assertIn("123456", self.errors[0])
+        self.assertIn("NOT in the trader's journal", self.errors[0])
+        # second pass: already reported, no new alert
+        self.assertEqual(self.x.reconcile(pending, {}), [])
+        self.assertEqual(len(self.errors), 1)
+
+    def test_unknown_lab_position_is_reported(self):
+        positions = {55: _Item(55, magic=40003, comment="LAB:LAB-BUY-4039", volume=0.01)}
+        self.assertEqual(self.x.reconcile({}, positions), [55])
+        self.assertIn("magic 40003", self.errors[0])
+
+    def test_reconcile_never_sends_orders(self):
+        """Report only: there is no broker call in reconcile(), so a None market must be fine."""
+        self.x.reconcile({1: _Item(1)}, {2: _Item(2)})
+        self.assertEqual(len(self.errors), 2)
+
+
+
+class TierOverlapTest(unittest.TestCase):
+    """1.10.6: the London/New York overlap counts as an active session for the tier facts."""
+
+    def setUp(self):
+        from autotrader import tiers as TR
+        self.TR = TR
+        self.c = {"tiers": {"A": {"risk_pct": 1.0, "min_confidence": 40}, "B": {"risk_pct": 0.5, "min_confidence": 35},
+                            "C": {"risk_pct": 0.15, "min_confidence": 30, "min_lot_if_below": True}},
+                  "tier_cap": {}, "expansion_filter": "shadow"}
+        self.idea = {"confidence": 40, "astra_risk": "MEDIUM", "sl_anchor": {"id": "M1"}, "tp_anchors": [{"id": "M2"}]}
+        self.dec = {"trade_class": "TREND", "expansion": {"against": False}, "would_block": False}
+        self.state = {"macro_trend": "BEARISH"}
+
+    def test_overlap_is_an_active_session(self):
+        g = self.TR.grade(self.idea, "SELL", self.dec, self.state, "LONDON_NY", self.c)
+        self.assertTrue(g["facts"]["session"])
+        self.assertEqual(g["tier"], "A")
+
+    def test_london_and_new_york_unchanged(self):
+        for s in ("LONDON", "NEW_YORK"):
+            self.assertEqual(self.TR.grade(self.idea, "SELL", self.dec, self.state, s, self.c)["tier"], "A")
+
+    def test_asia_and_off_still_lose_the_fact(self):
+        for s in ("ASIA", "OFF", None):
+            g = self.TR.grade(self.idea, "SELL", self.dec, self.state, s, self.c)
+            self.assertFalse(g["facts"]["session"])
+            self.assertEqual(g["tier"], "B")
+
+
+
+class ReplayVariantTest(unittest.TestCase):
+    """1.10.6: the three isolated replay variants (regime gate, no-REJECTION)."""
+
+    def setUp(self):
+        from datetime import datetime, timedelta, timezone
+        from autotrader import replay as RP
+        self.RP = RP
+        t0 = datetime(2026, 10, 6, 12, 0, tzinfo=timezone.utc)
+        m1 = [{"t": t0 + timedelta(minutes=k), "o": 4000.0, "h": 4000.5, "l": 3999.5, "c": 4000.0, "s": 0.2} for k in range(60)]
+        self.rp = RP.Replay(m1, {"server_offset": 3})
+        self.as_of = t0
+        self.state = {"macro_trend": "BULLISH", "trend_1day": "BULLISH", "trend_4h": "BULLISH", "intermediate_trend": "BULLISH",
+                      "local_trend": "BULLISH", "phase": "CONTINUATION", "phase_direction": "BULLISH", "volatility": "NORMAL",
+                      "baseline": 2.0, "momentum": "STEADY", "momentum_direction": "BULLISH",
+                      "expansion": {"active": False, "direction": None}, "atr15": 4.0, "_frames": {"15min": {"events": [], "swings": []}}}
+
+    def cand(self, how="SWEEP"):
+        from datetime import timedelta
+        return {"cid": f"c:{how}", "zone": {"id": "1h:OB:4000", "source": "STRUCTURE"}, "how": how, "direction": "BUY",
+                "order_type": "MARKET", "entry": 4000.2, "stop": 3996.0, "tp1": 4009.0, "tp2": None,
+                "expiry": self.as_of + timedelta(minutes=30), "created": self.as_of, "session": "LONDON", "atr15": 4.0,
+                "strong": False}
+
+    def test_gate_function(self):
+        g = self.RP.regime_gate_blocks
+        self.assertIsNotNone(g("pullbacks_in_range_only", "TREND", "BEARISH"))
+        self.assertIsNotNone(g("pullbacks_in_range_only", "TREND", "BULLISH"))
+        self.assertIsNone(g("pullbacks_in_range_only", "TREND", "MIXED"))
+        self.assertIsNone(g("pullbacks_in_range_only", "COUNTER_TREND", "BEARISH"))
+        self.assertIsNone(g("pullbacks_in_range_only", "BREAKOUT_CONTINUATION", "BEARISH"))
+        self.assertIsNone(g(None, "TREND", "BEARISH"))
+
+    def test_trend_pullback_in_trending_macro_is_refused_only_by_the_gated_variants(self):
+        for v in ("CORE", "CORE_regimeGated", "CORE_noRejection", "CORE_regimeGated_noRejection"):
+            self.rp._consider(v, self.cand("SWEEP"), self.state, [], [], self.as_of)
+        self.assertEqual(len(self.rp.trades["CORE"]), 1)
+        self.assertEqual(len(self.rp.trades["CORE_noRejection"]), 1)
+        self.assertEqual(len(self.rp.trades["CORE_regimeGated"]), 0)
+        self.assertEqual(len(self.rp.trades["CORE_regimeGated_noRejection"]), 0)
+        self.assertTrue(any(k.startswith("regime gate") for k in self.rp.funnel))
+
+    def test_trend_pullback_in_mixed_macro_passes_the_gate(self):
+        st = dict(self.state, macro_trend="MIXED", trend_1day="BEARISH")
+        self.rp._consider("CORE_regimeGated", self.cand("SWEEP"), st, [], [], self.as_of)
+        self.assertEqual(len(self.rp.trades["CORE_regimeGated"]), 1)
+        self.assertEqual(self.rp.trades["CORE_regimeGated"][0].trade_class, "TREND")
+
+    def test_rejection_confirmation_is_refused_by_the_no_rejection_variants(self):
+        st = dict(self.state, macro_trend="MIXED")
+        for v in ("CORE", "CORE_noRejection", "CORE_regimeGated", "CORE_regimeGated_noRejection"):
+            self.rp._consider(v, self.cand("REJECTION"), st, [], [], self.as_of)
+        self.assertEqual(len(self.rp.trades["CORE"]), 1)
+        self.assertEqual(len(self.rp.trades["CORE_regimeGated"]), 1)
+        self.assertEqual(len(self.rp.trades["CORE_noRejection"]), 0)
+        self.assertEqual(len(self.rp.trades["CORE_regimeGated_noRejection"]), 0)
+
+    def test_old_variants_unchanged_by_the_eighth_element(self):
+        """OLD_v1.5 has five elements; the unpacking must still default sessions/confirmations/gate to None."""
+        self.rp._consider("OLD_v1.5", self.cand("REJECTION"), self.state, [], [], self.as_of)
+        self.assertEqual(len(self.rp.trades["OLD_v1.5"]), 1)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.11.1 tests: a lab limit whose TP1 traded before the fill is kept and put back to Astra (lab_keep_after_tp_touch).
+# Offline, no MT5, no Telegram.
+# ----------------------------------------------------------------------------------------------------------------------
+SI_STOPS10 = types.SimpleNamespace(trade_stops_level=10, point=0.01, digits=2, volume_min=0.01, volume_step=0.01, filling_mode=7)
+C_LAB = {"confirm_entry_tolerance": 3.0, "confirm_retest_hours": 4, "idea_order_hours": 12, "max_order_lifetime_hours": 48,
+         "signal_entry_tolerance": 1.0, "max_entry_deviation_cap": 3.0}
+
+
+def idea(direction="SELL", lo=3949.66, hi=3953.0, stop=3965.5, tp1=3926.2, iid="I1"):
+    return {"id": iid, "direction": direction, "entry_low": lo, "entry_high": hi, "invalidation": stop, "targets": [tp1]}
+
+
+class PlanTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 4, 0, 30, tzinfo=UTC)
+
+    def test_tp1_already_reached_is_refused_by_default(self):
+        o, why = LB.plan(idea(), {"bid": 3925.0, "ask": 3925.3}, C_LAB, self.NOW, None, SI_STOPS10)
+        self.assertIsNone(o)
+        self.assertEqual(why, "TP1 already reached")
+
+    def test_with_the_switch_it_waits_at_the_zone_edge(self):
+        c = dict(C_LAB, lab_keep_after_tp_touch=True)
+        o, why = LB.plan(idea(), {"bid": 3925.0, "ask": 3925.3}, c, self.NOW, None, SI_STOPS10)
+        self.assertIsNone(why)
+        self.assertEqual((o["order_type"], o["entry_price"]), ("SELL_LIMIT", 3949.66))   # the zone edge nearest price
+        self.assertIsNone(o["cancel_if_price_below"])                 # 1.11.3: a plain limit, no touch / re-map
+        self.assertTrue(o["_tp_passed_at_entry"])
+        o, _ = LB.plan(idea("BUY", 3932.0, 3935.0, 3925.9, 3949.66), {"bid": 3955.0, "ask": 3955.3}, c, self.NOW,
+                       "REJECTION", SI_STOPS10)
+        self.assertEqual((o["order_type"], o["entry_price"]), ("BUY_LIMIT", 3935.0))     # never MARKET above TP1
+
+    def test_4_nov_sell_the_rally_idea(self):
+        """18:18 map: I2-SELL-CT SELL 4075.19-4082.68 stop 4087 TP1 4057.44 with price ~4050, below its TP1."""
+        c = dict(C_LAB, lab_keep_after_tp_touch=True)
+        o, why = LB.plan(idea("SELL", 4075.19, 4082.68, 4087.0, 4057.44), {"bid": 4050.0, "ask": 4050.2}, c, self.NOW,
+                         None, SI_STOPS10)
+        self.assertIsNone(why)
+        self.assertEqual((o["order_type"], o["entry_price"], o["stop_loss"], o["take_profit_1"]),
+                         ("SELL_LIMIT", 4075.19, 4087.0, 4057.44))
+        self.assertIsNone(o["cancel_if_price_above"])
+        self.assertIsNone(o["cancel_if_price_below"])
+
+    def test_normal_ideas_still_get_their_cancel_level(self):
+        c = dict(C_LAB, lab_keep_after_tp_touch=True)
+        o, _ = LB.plan(idea(), {"bid": 3940.0, "ask": 3940.3}, c, self.NOW, None, SI_STOPS10)
+        self.assertEqual(o["cancel_if_price_below"], 3926.2)
+        self.assertFalse(o["_tp_passed_at_entry"])
+
+    def test_normal_ideas_unchanged_by_the_switch(self):
+        c = dict(C_LAB, lab_keep_after_tp_touch=True)
+        a, _ = LB.plan(idea(), {"bid": 3940.0, "ask": 3940.3}, C_LAB, self.NOW, None, SI_STOPS10)
+        b, _ = LB.plan(idea(), {"bid": 3940.0, "ask": 3940.3}, c, self.NOW, None, SI_STOPS10)
+        self.assertEqual((a["order_type"], a["entry_price"]), (b["order_type"], b["entry_price"]))
+
+
+# ------------------------------------------------------------------ executor
+class _Order:
+    def __init__(self, ticket, magic):
+        self.ticket, self.magic, self.identifier, self.comment, self.volume_initial = ticket, magic, ticket, "", 0.01
+
+
+class _Market:
+    symbol = "XAUUSD"
+
+    def __init__(self, orders, bid, ask):
+        self.orders, self.bid, self.ask, self.sent = orders, bid, ask, []
+
+    def const(self, name):
+        return {"POSITION_TYPE_BUY": 0, "TRADE_ACTION_REMOVE": 8}.get(name, 0)
+
+    def quote(self):
+        return {"bid": self.bid, "ask": self.ask, "spread": self.ask - self.bid, "age": 1}
+
+    def symbol_info(self):
+        return SI_STOPS10
+
+    def trade_call(self, name, **kw):
+        return self.orders if name == "orders_get" else []
+
+
+class _State:
+    def __init__(self, rows):
+        self.rows = rows
+
+    def active_orders(self, include_lab=True):
+        return [r for r in self.rows if r["status"] in ("PENDING", "OPEN", "TP1_DONE")]
+
+    def all_orders(self):
+        return self.rows
+
+    def update_order(self, ticket, **fields):
+        for r in self.rows:
+            if r["ticket"] == ticket:
+                r.update(fields)
+
+    def closed_unreviewed(self):
+        return []
+
+    def closed_without_result(self):
+        return []
+
+
+def lab_rec(ticket=60084880, lab=1, direction="SELL", entry=3949.66, below=3926.2, above=None):
+    return {"ticket": ticket, "setup_id": "LAB-SELL-3952", "direction": direction, "status": "PENDING", "lab": lab,
+            "entry": entry, "sl": 3965.5, "tp1": 3926.2, "tp2": None, "position_ticket": None,
+            "expiry_utc": "2026-11-04T12:01:48Z", "cancel_above": above, "cancel_below": below,
+            "violations": json.dumps(["session_off", "no_confirmation"]), "playbook": "TREND"}
+
+
+class ExecutorTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 4, 0, 32, tzinfo=UTC)
+
+    def setUp(self):
+        self.msgs = []
+        self._t, self._e = alerts.trade, alerts.error
+        alerts.trade = lambda msg, short=None: self.msgs.append(msg)
+        alerts.error = lambda msg: self.msgs.append("ERR " + msg)
+
+    def tearDown(self):
+        alerts.trade, alerts.error = self._t, self._e
+
+    def run_manage(self, rec, keep, bid=3925.0, ask=3925.3, magic=40003):
+        c = {"magic": 40001, "magic_lab": 40003, "lab_mode": True, "lab_keep_after_tp_touch": keep}
+        m = _Market([_Order(rec["ticket"], magic)], bid, ask)
+        st = _State([rec])
+        x = EX.Executor(c, market=m, state=st)
+        x._send = lambda req: (m.sent.append(req), types.SimpleNamespace(order=1, price=bid))[1]
+        x.manage(self.NOW)
+        return m, rec
+
+    def test_without_the_switch_the_lab_order_is_cancelled_as_before(self):
+        m, rec = self.run_manage(lab_rec(), keep=False)
+        self.assertEqual(rec["status"], "CANCELLED")
+        self.assertEqual(len(m.sent), 1)
+
+    def test_with_the_switch_it_is_kept_and_tagged(self):
+        m, rec = self.run_manage(lab_rec(), keep=True)
+        self.assertEqual(m.sent, [])                                     # nothing sent to the broker
+        self.assertEqual(rec["status"], "PENDING")
+        self.assertIsNone(rec["cancel_below"])
+        self.assertEqual(rec["tp_touched_utc"], "2026-11-04T00:32:00Z")
+        self.assertIn("tp_touched_first", json.loads(rec["violations"]))
+        self.assertTrue(any("kept" in msg for msg in self.msgs))
+
+    def test_a_buy_limit_is_kept_too(self):
+        rec = lab_rec(ticket=60092146, direction="BUY", entry=3940.43, below=None, above=3960.64)
+        m, rec = self.run_manage(rec, keep=True, bid=3961.0, ask=3961.3)
+        self.assertEqual(rec["status"], "PENDING")
+        self.assertIsNotNone(rec.get("tp_touched_utc"))
+
+    def test_live_orders_are_never_kept(self):
+        m, rec = self.run_manage(lab_rec(lab=0), keep=True, magic=40001)
+        self.assertEqual(rec["status"], "CANCELLED")
+
+    def test_expiry_still_cancels(self):
+        rec = lab_rec()
+        rec["expiry_utc"] = "2026-11-04T00:00:00Z"
+        m, rec = self.run_manage(rec, keep=True)
+        self.assertEqual(rec["status"], "EXPIRED")
+
+
+# ------------------------------------------------------------------ re-asking Astra
+class StillProposedTest(unittest.TestCase):
+    def test_match_rules(self):
+        rec = {"direction": "SELL", "entry": 3949.66}
+        self.assertIsNotNone(LB.still_proposed(rec, [idea()], 1.0))
+        self.assertIsNone(LB.still_proposed(rec, [idea("BUY", 3940, 3950, 3930, 3970)], 1.0))       # other direction
+        self.assertIsNone(LB.still_proposed(rec, [idea(lo=3970, hi=3975, stop=3985, tp1=3950)], 1.0))  # zone moved
+        self.assertIsNotNone(LB.still_proposed(rec, [idea(lo=3951.0, hi=3955.0)], 2.0))             # within tolerance
+        self.assertIsNone(LB.still_proposed(rec, [idea(stop=3940.0)], 1.0))                           # stop now below
+        self.assertIsNone(LB.still_proposed(rec, [{"direction": "SELL"}], 1.0))                       # malformed idea
+
+
+class _Bridge:
+    def __init__(self, a, age):
+        self.a, self.age, self.requests = a, age, []
+
+    def analysis(self, now):
+        return self.a, self.age
+
+    def request_remap(self, key, reason, now):
+        self.requests.append((key, reason))
+        return True
+
+
+class _X:
+    def __init__(self):
+        self.cancelled = []
+
+    def cancel(self, ticket, why, status="CANCELLED"):
+        self.cancelled.append((ticket, why))
+        return True
+
+
+class RecheckTest(unittest.TestCase):
+    NOW = datetime(2026, 11, 4, 1, 40, tzinfo=UTC)
+
+    def setUp(self):
+        self._t = alerts.trade
+        alerts.trade = lambda msg, short=None: None
+
+    def tearDown(self):
+        alerts.trade = self._t
+
+    def lab_with(self, analysis, age, rows, keep=True, remap=False):
+        x = _X()
+        self.bridge = _Bridge(analysis, age)
+        app = types.SimpleNamespace(market=None, state=_State(rows), validator=None, executor=x,
+                                    bridge=self.bridge, market_context=lambda: ({}, 5.0))
+        c = {"lab_mode": True, "lab_keep_after_tp_touch": keep, "lab_tp_touch_remap": remap, "idea_max_age_minutes": 200,
+             "duplicate_atr": 0.5, "confirm_entry_tolerance": 3.0,
+             "lab_drop_rule": "unproposed"}          # these tests cover the 1.11.1 rule; 1.13.1 defaults to "contradicted"
+        return LB.Lab(c, app), x
+
+    def touched(self, at="2026-11-04T00:32:00Z"):
+        r = lab_rec()
+        r.update(cancel_below=None, tp_touched_utc=at)
+        return r
+
+    def test_newer_map_that_still_proposes_it_keeps_it(self):
+        a = {"id": "A2", "created_at": "2026-11-04T01:34:00Z", "ideas": [idea()]}
+        lab, x = self.lab_with(a, 6, [self.touched()])
+        self.assertEqual(lab.recheck(self.NOW), [])
+        self.assertEqual(x.cancelled, [])
+
+    def test_newer_map_without_it_cancels_once(self):
+        a = {"id": "A2", "created_at": "2026-11-04T01:34:00Z", "ideas": [idea("BUY", 3939, 3941, 3931.5, 3960.6)]}
+        rows = [self.touched()]
+        lab, x = self.lab_with(a, 6, rows)
+        self.assertEqual(lab.recheck(self.NOW), [60084880])
+        self.assertIn("no longer proposes", x.cancelled[0][1])
+        self.assertEqual(lab.recheck(self.NOW), [])                      # the same map is asked once per order
+
+    def test_a_map_made_before_the_touch_is_not_an_answer(self):
+        a = {"id": "A1", "created_at": "2026-11-04T00:04:00Z", "ideas": []}
+        lab, x = self.lab_with(a, 30, [self.touched()])
+        self.assertEqual(lab.recheck(self.NOW), [])
+        self.assertEqual(x.cancelled, [])
+
+    def test_stale_analysis_or_switch_off_does_nothing(self):
+        a = {"id": "A2", "created_at": "2026-11-04T01:34:00Z", "ideas": []}
+        lab, x = self.lab_with(a, 500, [self.touched()])
+        self.assertEqual(lab.recheck(self.NOW), [])
+        lab, x = self.lab_with(a, 6, [self.touched()], keep=False)
+        self.assertEqual(lab.recheck(self.NOW), [])
+        self.assertEqual(x.cancelled, [])
+
+    def test_untouched_and_live_orders_are_ignored(self):
+        a = {"id": "A2", "created_at": "2026-11-04T01:34:00Z", "ideas": []}
+        live = self.touched()
+        live["lab"] = 0
+        lab, x = self.lab_with(a, 6, [lab_rec(), live])
+        self.assertEqual(lab.recheck(self.NOW), [])
+
+
+class RemapRequestTest(RecheckTest):
+    """1.11.2: a TP touch asks the signal bot for an early map at once (one request per order)."""
+
+    def test_request_is_written_once_per_touched_order(self):
+        a = {"id": "A1", "created_at": "2026-11-04T00:04:00Z", "ideas": []}          # older than the touch
+        lab, x = self.lab_with(a, 30, [self.touched(), lab_rec(ticket=7)], remap=True)
+        lab.recheck(self.NOW)
+        lab.recheck(self.NOW)
+        self.assertEqual([k for k, _ in self.bridge.requests], ["REMAP-60084880"])
+        self.assertIn("TP1 3926.2 traded before the fill", self.bridge.requests[0][1])
+        self.assertEqual(x.cancelled, [])                                             # the old map is no answer
+
+    def test_no_request_when_switched_off(self):
+        a = {"id": "A1", "created_at": "2026-11-04T00:04:00Z", "ideas": []}
+        lab, x = self.lab_with(a, 30, [self.touched()], remap=False)
+        lab.recheck(self.NOW)
+        self.assertEqual(self.bridge.requests, [])
+
+
+class BridgeFileTest(unittest.TestCase):
+    def test_request_file_shape(self):
+        import tempfile
+        from autotrader import bridge as BR
+        b = BR.Bridge.__new__(BR.Bridge)
+        b.folder = Path(tempfile.mkdtemp())
+        self.assertTrue(b.request_remap("REMAP-1", "x" * 300, datetime(2026, 11, 4, 0, 32, tzinfo=UTC)))
+        req = json.loads((b.folder / "remap_request.json").read_text(encoding="utf-8"))
+        self.assertEqual((req["id"], req["from"], len(req["reason"])), ("REMAP-1", "auto_trader", 200))
+        self.assertTrue(req["at"].startswith("2026-11-04T00:32"))
+
+
+class SettingsTest(unittest.TestCase):
+    def test_default_off_and_validated(self):
+        from autotrader import settings as ST
+        self.assertIs(ST.DEFAULTS["lab_keep_after_tp_touch"], False)
+        self.assertIs(ST.DEFAULTS["lab_tp_touch_remap"], False)
+        self.assertIn("tp_touched_first", LB.TAGS)
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.11.6: a minimum-lot position takes the whole profit at TP1; the lab treats one zone bought twice as one sample; the
+# lab tags a TP1 that reaches past the opposite idea's entry. Offline, no MT5, no Telegram.
+# ----------------------------------------------------------------------------------------------------------------------
+class _Mkt(_OvernightMarket):
+    CONST = dict(_OvernightMarket.CONST, TRADE_ACTION_SLTP=6)
+
+
+SI_MINLOT = types.SimpleNamespace(point=0.01, digits=2, volume_min=0.01, volume_step=0.01, filling_mode=7)
+Q = {"bid": 4084.0, "ask": 4084.3, "spread": 0.3, "age": 1}
+
+
+class Tp1Test(unittest.TestCase):
+    def setUp(self):
+        self.msgs = []
+        self._t, self._e = alerts.trade, alerts.error
+        alerts.trade = lambda msg, short=None: self.msgs.append(msg)
+        alerts.error = lambda msg: self.msgs.append("ERR " + msg)
+
+    def tearDown(self):
+        alerts.trade, alerts.error = self._t, self._e
+
+    def run_tp1(self, volume, buy=False):
+        rec = {"ticket": 60272095, "setup_id": "IDEA-SELL-4120", "direction": "BUY" if buy else "SELL", "status": "OPEN",
+               "tp1": 4084.25, "tp2": 4071.41, "tp1_close_pct": 50, "be_at_tp1": 1, "lab": 0}
+        rows = [rec]
+        x = EX.Executor({"magic": 40001, "magic_lab": 40003, "lab_mode": False}, market=_Mkt([]),
+                        state=_JournalState(rows))
+        sent = []
+        x._send = lambda req: (sent.append(req), types.SimpleNamespace(order=1, price=4084.0))[1]
+        pos = _Pos(60272095, magic=40001, volume=volume, typ=0 if buy else 1, price_open=4116.76, sl=4132.5, tp=4071.41)
+        x._tp1(rec, pos, SI_MINLOT, buy, Q)
+        return rec, sent
+
+    def test_the_5_nov_case_minimum_lot_closes_whole_at_tp1(self):
+        rec, sent = self.run_tp1(0.01)
+        self.assertEqual(len(sent), 1)                                  # one market close, no breakeven move
+        self.assertEqual((sent[0]["action"], sent[0]["volume"], sent[0]["type"], sent[0]["price"]), (1, 0.01, 0, 4084.3))
+        self.assertEqual(rec["status"], "TP1_DONE")
+        self.assertIn("whole position closed", self.msgs[-1])
+        self.assertNotIn("partial", self.msgs[-1])
+
+    def test_a_splittable_position_still_closes_half_and_moves_to_breakeven(self):
+        rec, sent = self.run_tp1(0.04)
+        self.assertEqual(sent[0]["volume"], 0.02)                       # half closed at TP1
+        self.assertEqual(sent[1]["sl"], 4116.76)                        # rest at breakeven
+        self.assertEqual(rec["status"], "TP1_DONE")
+        self.assertIn("partial closed", self.msgs[-1])
+
+    def test_0_03_lots_closes_one_lot_step(self):
+        _, sent = self.run_tp1(0.03, buy=True)
+        self.assertEqual(sent[0]["volume"], 0.01)
+        self.assertEqual(sent[0]["type"], 1)                            # SELL to close a BUY
+
+
+class LabSameZoneTest(unittest.TestCase):
+    TOL = 0.5 * 9.0                                                     # duplicate_atr 0.5 x ATR15 ~9
+
+    def working(self, entry, sl, direction="BUY"):
+        return {"lab": 1, "ticket": 60222022, "setup_id": "LAB-BUY-4117", "direction": direction, "entry": entry, "sl": sl}
+
+    def order(self, entry, sl, direction="BUY"):
+        return {"direction": direction, "entry_price": entry, "stop_loss": sl}
+
+    def test_the_5_nov_case_same_zone_two_maps_is_one_sample(self):
+        self.assertIsNotNone(LB.duplicate_of(self.order(4117.64, 4095.50), [self.working(4123.62, 4096.00)], self.TOL))
+
+    def test_the_28_oct_case_still_a_duplicate(self):
+        self.assertIsNotNone(LB.duplicate_of(self.order(4043.0, 4027.5), [self.working(4043.0, 4027.5)], self.TOL))
+
+    def test_a_different_stop_is_a_different_trade(self):
+        # 5 Nov LAB-BUY-4118 (4119.43 / sl 4107.50) while 4117 (sl 4096) was open: another idea, kept
+        self.assertIsNone(LB.duplicate_of(self.order(4119.43, 4107.50), [self.working(4123.62, 4096.00)], self.TOL))
+
+    def test_far_entries_or_other_direction_are_not_duplicates(self):
+        self.assertIsNone(LB.duplicate_of(self.order(4150.0, 4096.0), [self.working(4123.62, 4096.0)], self.TOL))
+        self.assertIsNone(LB.duplicate_of(self.order(4117.64, 4095.5, "SELL"), [self.working(4123.62, 4096.0)], self.TOL))
+        live = dict(self.working(4123.62, 4096.0), lab=0)
+        self.assertIsNone(LB.duplicate_of(self.order(4117.64, 4095.5), [live], self.TOL))
+
+
+class TpBeyondOppositeTest(unittest.TestCase):
+    SELL_IDEA = {"direction": "SELL", "entry_low": 4140.29, "entry_high": 4147.03}
+    BUY_IDEA = {"direction": "BUY", "entry_low": 4076.0, "entry_high": 4084.0}
+
+    def test_the_5_nov_buy_target_inside_the_sell_zone(self):
+        o = {"direction": "BUY", "entry_price": 4123.62, "take_profit_1": 4146.12}
+        self.assertTrue(LB.tp_beyond_opposite(o, [self.SELL_IDEA]))
+
+    def test_target_at_the_opposite_entry_is_consistent(self):
+        o = {"direction": "BUY", "entry_price": 4110.0, "take_profit_1": 4140.29}
+        self.assertFalse(LB.tp_beyond_opposite(o, [self.SELL_IDEA]))
+
+    def test_sell_mirror(self):
+        self.assertTrue(LB.tp_beyond_opposite({"direction": "SELL", "entry_price": 4117.0, "take_profit_1": 4080.0},
+                                              [self.BUY_IDEA]))
+        self.assertFalse(LB.tp_beyond_opposite({"direction": "SELL", "entry_price": 4117.0, "take_profit_1": 4084.25},
+                                               [self.BUY_IDEA]))
+
+    def test_no_ideas_or_same_direction_or_bad_data(self):
+        o = {"direction": "BUY", "entry_price": 4123.62, "take_profit_1": 4146.12}
+        self.assertFalse(LB.tp_beyond_opposite(o, None))
+        self.assertFalse(LB.tp_beyond_opposite(o, [dict(self.SELL_IDEA, direction="BUY")]))
+        self.assertFalse(LB.tp_beyond_opposite(o, [{"direction": "SELL", "entry_low": None}]))
+
+    def test_tag_is_registered(self):
+        self.assertIn("tp_beyond_opposite", LB.TAGS)
+
+
+if __name__ == "__main__":
+    unittest.main()

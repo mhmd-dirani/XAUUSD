@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 r"""
 Historical replay runner (rewritten 29 Oct 2026 after the original tools\replay.py was overwritten by mistake;
-the public functions tests\test_v16.py relies on - synthetic(), fetch_mt5() - are provided again).
+the public functions tests\test_trader_core.py relies on - synthetic(), fetch_mt5() - are provided again).
 
     python tools\replay.py --days 120            fetch 1-minute XAUUSD from the MT5 terminal, cache it, replay
     python tools\replay.py --days 720            two years, if the terminal's "Max bars in chart" allows it

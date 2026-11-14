@@ -1,7 +1,7 @@
-"""1.14: entries are rechecked at the moment of entry (news, one position per zone, Astra's newer map), the lab stops
-placing blind limits (lab_entry recheck), and the pre-news guard protects what is already at the broker.
-The 10 Nov case: BUY limit 4076.36 placed 10:02 filled 10:27, its 5M twin bought the same zone at 12:05, and the CPI
-candle stopped both at 13:26-13:30. Offline, no MT5, no Telegram."""
+"""Entries are rechecked at the moment of entry (news, one position per zone, Astra's newer map), the lab's
+entry-recheck mode and the pre-news guard.
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import sys
@@ -11,16 +11,22 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from autotrader import alerts, lab as LB, ltf as LT, newsguard as NG  # noqa: E402
-from test_v113 import C, IDEA, PLAIN, _App, leg_bars  # noqa: E402
+from test_ltf import _App, C, IDEA, leg_bars, PLAIN  # noqa: E402
 
 UTC = timezone.utc
 
 
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.14: entries are rechecked at the moment of entry (news, one position per zone, Astra's newer map), the lab stops
+# placing blind limits (lab_entry recheck), and the pre-news guard protects what is already at the broker.
+# The 10 Nov case: BUY limit 4076.36 placed 10:02 filled 10:27, its 5M twin bought the same zone at 12:05, and the CPI
+# candle stopped both at 13:26-13:30. Offline, no MT5, no Telegram.
+# ----------------------------------------------------------------------------------------------------------------------
 class _Bridge:
     def __init__(self, a=None):
         self.a = a
@@ -142,14 +148,14 @@ class LabEntryModeTest(unittest.TestCase):
 
 class LabRecheckEndToEnd(unittest.TestCase):
     """Lab.sweep with lab_entry recheck: the idea becomes an LTF watch, no order goes to the broker (uses the 1.10
-    end-to-end harness; skipped where test_v110 is not present)."""
+    end-to-end harness; skipped where test_lab is not present)."""
 
     def test_sweep_watches_instead_of_sending(self):
         try:
             import tempfile
-            import test_v110 as T110
+            import test_lab as T110
         except ImportError:
-            self.skipTest("test_v110 harness not available")
+            self.skipTest("test_lab harness not available")
         with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             app, c = T110.LabEndToEnd._app(T110.LabEndToEnd(), d)
             c.update(lab_entry="recheck", ltf_lab=dict(c["ltf_lab"], mode="lab"), lab_keep_after_tp_touch=True)

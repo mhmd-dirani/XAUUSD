@@ -1,5 +1,6 @@
-"""1.12: the SELL_4H_WEAKNESS lab engine (autotrader/weakness.py). Offline, no MT5, no Telegram.
-Parity with tools/weakness_replay.py, setup creation, cancels, entries, the BUY mirror, gates and settings."""
+"""The SELL_4H_WEAKNESS lab engine (autotrader/weakness.py) and its parity with tools/weakness_replay.py.
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import sys
@@ -9,13 +10,19 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE.parent / "tools", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE.parent / "tools", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from autotrader import alerts, lab as LB, weakness as WK  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.12: the SELL_4H_WEAKNESS lab engine (autotrader/weakness.py). Offline, no MT5, no Telegram.
+# Parity with tools/weakness_replay.py, setup creation, cancels, entries, the BUY mirror, gates and settings.
+# ----------------------------------------------------------------------------------------------------------------------
 T0 = 1_793_000_000 - (1_793_000_000 % 14400)          # a 4H boundary
 NOW = datetime.fromtimestamp(T0 + 40 * 14400, UTC)
 

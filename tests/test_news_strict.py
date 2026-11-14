@@ -1,5 +1,6 @@
-"""1.17: news_mode "strict" - no time lock around releases; inside the old window only market entries on a strong
-15M candle that is not the release candle, at most news_strict_risk_pct. A stale calendar still blocks."""
+"""news_mode "strict": no time lock around releases; only market entries on a strong 15M candle at reduced risk.
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import sys
@@ -9,9 +10,9 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 try:
     import astra_analysis  # noqa: F401,E402
@@ -20,6 +21,12 @@ except ImportError:                                   # the offline sandbox has 
 from autotrader import executor as EX, market as MK, news as NW, settings, validator as VA  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.17: news_mode "strict" - no time lock around releases; inside the old window only market entries on a strong
+# 15M candle that is not the release candle, at most news_strict_risk_pct. A stale calendar still blocks.
+# ----------------------------------------------------------------------------------------------------------------------
 REL = datetime(2026, 11, 10, 13, 30, tzinfo=UTC)          # CPI
 
 

@@ -311,7 +311,7 @@ tools/replay.py                    historical replay, old vs new rules (v1.6)
 config/auto_trader_config.json     trading settings (copy of .example.json)
 config/auto_trader_prompt.md       Claude's instructions
 scripts/run_trader.ps1  trader_check.ps1  trader_report.ps1  trader_selftest.ps1  run_replay.ps1
-tests/test_auto_trader.py  tests/test_v16.py   offline tests
+tests/test_auto_trader.py  tests/test_trader_core.py  ...   offline tests, one file per feature (list: SELF_TESTS in src/auto_trader.py)
 docs/AUTO_TRADER.md                this file
 ```
 Edited: README.md (one section + one table row), CHANGELOG.md (one entry), .gitignore (`runtime_trader/`).

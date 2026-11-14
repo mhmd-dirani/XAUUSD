@@ -1,4 +1,6 @@
-"""11 Nov: the zone-reaction study (Astra LIMIT ideas: limit fill vs the 5M/1M reaction at the zone). Report only."""
+"""The zone-reaction study (Astra LIMIT ideas: limit fill vs the 5M/1M reaction at the zone). Report only.
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import json
@@ -12,13 +14,18 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 from autotrader import zone_study as Z  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 11 Nov: the zone-reaction study (Astra LIMIT ideas: limit fill vs the 5M/1M reaction at the zone). Report only.
+# ----------------------------------------------------------------------------------------------------------------------
 T0 = datetime(2026, 11, 4, 13, 0, tzinfo=UTC)            # Wednesday, London/NY
 
 

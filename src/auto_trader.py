@@ -34,6 +34,24 @@ import gold_monitor as GM  # noqa: E402
 from autotrader import VERSION, settings  # noqa: E402
 
 UTC = timezone.utc
+# The auto-trader's offline tests (tests/<name>.py), one file per feature. A new test file must be added here.
+SELF_TESTS = (
+    "test_auto_trader",      # settings, connection, validator, executor, analyst parsing, bridge, confirmations
+    "test_trader_core",      # market state, playbooks, replay, tiers, post-trade review, breakout continuation
+    "test_user_plans",       # the owner's /idea plans
+    "test_ict",              # ICT / clock / scalp replay models
+    "test_lab",              # lab mode
+    "test_overnight",        # overnight trend engine
+    "test_weakness",         # 4H-weakness lab engine
+    "test_ltf",              # hedge rule, LTF 5M entries, lab drop rule, 1H-trend retest
+    "test_entry_recheck",    # recheck at entry, pre-news guard
+    "test_protect",          # trade protection, zone score, opposite trades, missed fills
+    "test_news_strict",      # strict news mode
+    "test_scalp",            # scalp candidate and scalp lab
+    "test_zone_study",       # zone-reaction study
+    "test_flow_breakout",    # order-flow record, breakout lab
+    "test_pyideas",          # Python's own trade ideas
+)
 
 
 def setup_logging(c):
@@ -56,7 +74,11 @@ def self_test() -> int:
     os.environ["TELEGRAM_BOT_TOKEN"] = os.environ["TELEGRAM_CHAT_ID"] = ""   # 1.7: tests never post to Telegram
     tests = HERE.parent / "tests"
     sys.path.insert(0, str(tests))
-    suite = unittest.defaultTestLoader.loadTestsFromNames(["test_auto_trader", "test_v16", "test_v17", "test_v18", "test_user_plans", "test_v110", "test_v1106", "test_ict", "test_v111", "test_v1111", "test_v1114", "test_v1116", "test_v112", "test_v113", "test_v1131", "test_v114", "test_v1141", "test_v115", "test_v116", "test_v117", "test_v118", "test_v119", "test_v120", "test_v121", "test_v122", "test_v123"])
+    names = [name for name in SELF_TESTS if not (tests / f"{name}.py").exists()]
+    if names:
+        print("Missing test file(s):", ", ".join(names))
+        return 1
+    suite = unittest.defaultTestLoader.loadTestsFromNames(list(SELF_TESTS))
     return 0 if unittest.TextTestRunner(verbosity=2).run(suite).wasSuccessful() else 1
 
 

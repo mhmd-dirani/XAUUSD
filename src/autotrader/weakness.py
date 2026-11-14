@@ -6,7 +6,7 @@ before the run (BASE 19 trades -0.10 R; LOOSE 60 trades flips sign out of sample
 forward log of the detector's own signals. This module is that log: every signal becomes a 0.01-lot lab order, tagged,
 so it can be scored against the hand strategy and the replay. It never trades the live (swing) track.
 
-The rules are the replay's spec, unchanged (functions copied from tools/weakness_replay.py; tests/test_v112.py checks
+The rules are the replay's spec, unchanged (functions copied from tools/weakness_replay.py; tests/test_weakness.py checks
 that both give the same answers on the same candles):
   1. Resistance: >= min_run (3) closed 4H candles inside touch_window (8) with highs on one line (within
      equal_tol_atr 0.25 x ATR(4H)); no close above it and no trade through it; the line is a local high (>= the

@@ -1,19 +1,19 @@
-"""1.19 (11 Nov): order-flow record (5M/1M structure + tick volume) on every order, the breakout lab (breakouts
-against the trend at the minimum lot), USD holidays as normal days, and two loop fixes (a held idea re-validated every
-2 s; a stale quote killing a live idea)."""
+"""The order-flow record on every order, the breakout lab, USD holidays as normal days and two loop fixes.
+Offline: no MT5, no network, no Claude, no Telegram."""
+
 from __future__ import annotations
 
 import sys
 import time
 import types
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
-for p in (HERE.parent / "src", HERE):
-    if str(p) not in sys.path:
-        sys.path.insert(0, str(p))
+for _p in (HERE.parent / "src", HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 
 try:
     import astra_analysis  # noqa: F401,E402
@@ -21,10 +21,18 @@ except ImportError:
     sys.modules["astra_analysis"] = types.ModuleType("astra_analysis")
 sys.modules.setdefault("astra_anthropic", types.SimpleNamespace(model_name=lambda v6: "claude-opus-5-5",
                                                                   EFFORTS=("low", "medium", "high")))
-from autotrader import app as AP, breakout as BK, executor as EX, flow as FL, market as MK, news as NW, settings  # noqa: E402
+from autotrader import app as AP, breakout as BK, executor as EX, flow as FL, market as MK  # noqa: E402
+from autotrader import news as NW, settings  # noqa: E402
 from autotrader.validator import Rejected  # noqa: E402
 
 UTC = timezone.utc
+
+
+# ----------------------------------------------------------------------------------------------------------------------
+# 1.19 (11 Nov): order-flow record (5M/1M structure + tick volume) on every order, the breakout lab (breakouts
+# against the trend at the minimum lot), USD holidays as normal days, and two loop fixes (a held idea re-validated every
+# 2 s; a stale quote killing a live idea).
+# ----------------------------------------------------------------------------------------------------------------------
 NOW = datetime(2026, 11, 11, 15, 0, tzinfo=UTC)
 
 

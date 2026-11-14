@@ -51,16 +51,6 @@ CREATE TABLE IF NOT EXISTS trade_reviews (
     ticket INTEGER PRIMARY KEY, reviewed_utc TEXT NOT NULL, verdict TEXT, outcome TEXT, r REAL,
     mfe_r REAL, mae_r REAL, after_4h TEXT, tier TEXT, data TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS paper_trades (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    created_utc TEXT NOT NULL, setup_id TEXT NOT NULL, source TEXT NOT NULL,
-    direction TEXT NOT NULL, order_type TEXT NOT NULL, entry REAL NOT NULL, sl REAL NOT NULL,
-    tp1 REAL NOT NULL, tp2 REAL, expiry_utc TEXT NOT NULL, cancel_above REAL, cancel_below REAL,
-    status TEXT NOT NULL,            -- PENDING | OPEN | TP1_DONE | CLOSED | CANCELLED | EXPIRED
-    fill_utc TEXT, fill REAL, risk REAL, realised REAL DEFAULT 0, closed_utc TEXT, r REAL, outcome TEXT,
-    playbook TEXT, confirmation TEXT, session TEXT, regime TEXT, astra_class TEXT, expansion_block INTEGER,
-    why TEXT
-);
 """
 META_COLS = (("playbook", "TEXT"), ("confirmation", "TEXT"), ("session", "TEXT"), ("regime", "TEXT"),
              ("astra_class", "TEXT"), ("expansion_block", "INTEGER"),
@@ -93,24 +83,11 @@ class State:
             # 1.7.3: a review made before the 4h-after window had closed measured nothing; redo it
             c.execute("DELETE FROM trade_reviews WHERE ticket IN (SELECT o.ticket FROM orders o JOIN trade_reviews v ON v.ticket=o.ticket"
                       " WHERE o.closed_utc IS NOT NULL AND v.reviewed_utc < strftime('%Y-%m-%dT%H:%M:%SZ', o.closed_utc, '+4 hours'))")
-            pcols = {r[1] for r in c.execute("PRAGMA table_info(paper_trades)")}
-            for col, typ in (("rr", "REAL"), ("lots", "REAL"), ("risk_money", "REAL"), ("grade", "TEXT")):  # 1.6.1
-                if col not in pcols:
-                    c.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {typ}")
 
     def _c(self):
         c = sqlite3.connect(self.path, timeout=10)
         c.row_factory = sqlite3.Row
         return c
-
-    # ---------------------------------------------------------------- setups
-    def setup_used(self, setup_id: str) -> bool:
-        with self._c() as c:
-            return c.execute("SELECT 1 FROM used_setups WHERE setup_id=?", (setup_id,)).fetchone() is not None
-
-    def mark_setup_used(self, setup_id: str):
-        with self._c() as c:
-            c.execute("INSERT OR IGNORE INTO used_setups VALUES (?,?)", (setup_id, _now()))
 
     # ---------------------------------------------------------------- orders
     def record_order(self, ticket, order, grade, lots, risk_money, status, position_ticket=None):
@@ -135,29 +112,6 @@ class State:
         if meta:
             self.update_order(ticket, **{k: (json.dumps(meta[k]) if k in ("regime", "tier_facts", "violations") else meta[k])
                                          for k, _ in META_COLS if k in meta})
-
-    # ---------------------------------------------------------------- paper trades (v1.6)
-    def paper_open(self, rec: dict) -> int:
-        cols = ", ".join(rec)
-        with self._c() as c:
-            cur = c.execute(f"INSERT INTO paper_trades ({cols}) VALUES ({', '.join('?' * len(rec))})",
-                            tuple(json.dumps(v) if isinstance(v, (dict, list)) else v for v in rec.values()))
-            return cur.lastrowid
-
-    def paper_update(self, pid: int, **fields):
-        if fields:
-            with self._c() as c:
-                c.execute(f"UPDATE paper_trades SET {', '.join(f'{k}=?' for k in fields)} WHERE id=?",
-                          (*fields.values(), pid))
-
-    def paper_active(self) -> list:
-        with self._c() as c:
-            return [dict(r) for r in c.execute(
-                "SELECT * FROM paper_trades WHERE status IN ('PENDING','OPEN','TP1_DONE') ORDER BY id")]
-
-    def paper_all(self) -> list:
-        with self._c() as c:
-            return [dict(r) for r in c.execute("SELECT * FROM paper_trades ORDER BY id")]
 
     def update_order(self, ticket: int, **fields):
         if fields:

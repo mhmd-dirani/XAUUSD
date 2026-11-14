@@ -32,7 +32,6 @@ from . import review as RV
 from . import tiers as TR
 from . import playbooks as PB
 from . import regime as RG
-from . import replay as RP
 from . import sessions as SS
 from .analyst import Analyst, build_payload
 from .executor import Executor

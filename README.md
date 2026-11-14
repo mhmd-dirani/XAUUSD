@@ -1,6 +1,7 @@
-# Gold Monitor V6.1.3 "Astra"
+# Gold Monitor V6.2.1 "Astra"
 
 An XAU/USD (gold) analysis and alert bot. **Alerts only: it never places, changes or closes a trade.**
+A separate, optional demo auto-trader (1.20.3) lives in the same project; see the end of this file.
 
 - **Python is the sensor.** It reads closed candles and live bid/ask from your MetaTrader 5 terminal (read-only) and remembers every important zone: tests, breaks, flips, retests and liquidity sweeps. It also checks the economic calendar, the news and the broker spread.
 - **Astra is the analyst.** Astra is your saved OpenAI agent. Every hour, or earlier when price enters a remembered zone, it builds a multi-timeframe market map. It writes a market story, scenarios, a **TRADE IDEA** (entry, stop loss, take profits, confidence, risk) and **STRUCTURE WATCH** reports. It also uses the trading rules you taught it from your own charts.
@@ -13,28 +14,38 @@ An XAU/USD (gold) analysis and alert bot. **Alerts only: it never places, change
 ```
 Forex_Bot_Trader/
 ├── src/
-│   ├── gold_monitor.py          the bot (main program)
+│   ├── gold_monitor.py          the signal bot (main program)
 │   ├── astra_memory.py          market memory, zone sensor, learning history (scores Astra's ideas)
 │   ├── astra_analysis.py        Astra's report format, validation, Telegram texts, trader playbook loader
 │   ├── astra_anthropic.py       optional Claude analyst backend (docs/CLAUDE_ANALYST.md)
+│   ├── user_plans.py            your own /idea plans sent on Telegram
 │   ├── gold_smc_engine.py       BOS/CHoCH, liquidity sweeps, FVG, order blocks, Fibonacci/OTE
 │   ├── gold_confluence_v5.py    EMA/RSI/MACD, RSI divergence, breaker candidates
-│   └── gold_evidence.py         evidence snapshot for Astra + Python verification of every setup
+│   ├── gold_evidence.py         evidence snapshot for Astra + Python verification of every setup
+│   ├── auto_trader.py           the demo auto-trader (separate program, docs/AUTO_TRADER.md)
+│   └── autotrader/              the auto-trader's modules
 ├── tools/
 │   ├── astra_dry_run.py         one full Astra analysis on real candles, nothing sent to Telegram
 │   ├── learn_lessons.py         teach Astra from your chart images (lessons/ → playbook)
-│   ├── apply_claude_analyst.py  one-time installer of the Claude switch (already applied)
+│   ├── check_claude_key.py      check that the Anthropic key works
+│   ├── idea_scorecard.py        score Astra's past ideas from the memory database
+│   ├── replay.py                historical replay of the auto-trader rules
+│   ├── scalp_replay.py          replay of the scalp candidate
+│   ├── weakness_replay.py       replay of the 4H-weakness strategy
 │   └── mt5_calendar_to_excel.py optional: view the MT5 calendar in Excel
 ├── mql/
-│   ├── mql5/GoldCalendarBridge.mq5   MT5 Expert Advisor that exports the USD calendar (required)
-│   └── mql4/XAUUSD_QuoteBridge.mq4   optional MT4 bid/ask file bridge (not used with MT5)
+│   └── mql5/GoldCalendarBridge.mq5   MT5 Expert Advisor that exports the USD calendar (required)
 ├── config/
-│   ├── gold_v5_config.json           your settings (used by the scripts)
-│   └── gold_v5_config.example.json   reference copy of the defaults
+│   ├── gold_v5_config.json           your signal-bot settings (used by the scripts)
+│   ├── gold_v5_config.example.json   reference copy of the defaults
+│   ├── auto_trader_config.json       auto-trader settings
+│   ├── secrets.env                   your keys (copy secrets.env.example; never committed)
+│   └── astra_instructions.md, auto_trader_prompt.md   the analysts' role texts
 ├── lessons/                     your teaching charts + astra_playbook.json (used live)
 ├── docs/                        detailed guides (see the end of this file)
-├── scripts/run.ps1              start the bot
-├── scripts/selftest.ps1         run all 296 offline tests
+├── scripts/run.ps1              start the signal bot
+├── scripts/selftest.ps1         run the signal bot's offline tests
+├── scripts/run_trader.ps1       start the auto-trader (also trader_check / trader_report / trader_selftest)
 ├── data/                        optional extras (calendar Excel view)
 ├── tests/                       offline tests (no MT5, network, OpenAI or Telegram needed)
 ├── requirements.txt
@@ -58,12 +69,9 @@ py -m venv .venv                # once; any Python 3.10+ that MetaTrader5 suppor
 
 1. **MT5:** log in to your GivTrade account, put `XAUUSD` in Market Watch, and keep **Algo Trading disabled**.
 2. **Calendar EA:** in MetaEditor, compile `mql/mql5/GoldCalendarBridge.mq5` (F7) and attach it to any chart. The Experts tab should print `Calendar bridge: published …` every 5 minutes. Leave `RefreshSeconds` at 300; anything above 600 makes the calendar look stale and blocks signals. Full guide: `docs/GIVTRADE_SETUP.md`.
-3. **Keys:** set these once in PowerShell. They are user environment variables, so open a new window afterwards.
-   ```powershell
-   setx OPENAI_API_KEY "sk-..."
-   setx TELEGRAM_BOT_TOKEN "123:ABC..."
-   setx TELEGRAM_CHAT_ID "123456789"
-   ```
+3. **Keys:** copy `config\secrets.env.example` to `config\secrets.env` and fill in your values
+   (`OPENAI_API_KEY`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, …). The bots read this file at startup and it is
+   never committed. Alternatively set the same names once with `setx` and open a new PowerShell window.
 4. **OpenAI budget:** set a monthly limit in your OpenAI account (Billing → Limits). A live week costs roughly $50–70 at the default hourly analysis.
 
 ## Every day
@@ -74,7 +82,7 @@ py -m venv .venv                # once; any Python 3.10+ that MetaTrader5 suppor
 
 Start it any time. When the market is closed, the bot waits and stops paid analysis. Gold trades Sunday 18:00 to Friday 17:00 New York time, with a daily 17:00–18:00 break. To stop, press `Ctrl+C`.
 
-The first Telegram message is `🟢 GOLD V6.1.3 Astra — ONLINE`, followed by Astra's first report.
+The first Telegram message starts with `🟢 GOLD — ONLINE`, followed by Astra's first report.
 
 ## Before going live: dry run
 
@@ -129,7 +137,7 @@ Lessons already studied are skipped, so only new or edited files cost anything. 
 
 ## Safety
 
-- There is no order code anywhere, in Python or MQL. MT5 access is limited to a fixed list of read-only calls. Keep Algo Trading disabled as a second safeguard.
+- The signal bot has no order code, in Python or MQL: its MT5 access is limited to a fixed list of read-only calls. Only the separate demo auto-trader (below) sends orders. Keep Algo Trading disabled in the signal bot's terminal as a second safeguard.
 - Missing, stale or inconsistent data blocks BUY/SELL signals: quotes, candles, calendar, news, broker server, clock offset or tick continuity. The bot fails closed.
 - If the MT5 terminal restarts, the bot reconnects by itself within about 30 seconds.
 - Astra's ideas carry a confidence and a risk class. They are analysis, not instructions. The bot scores every idea afterwards (played out, failed, not triggered), and the daily report shows the track record. Paper-trade the ideas until that record shows they are worth following.
@@ -142,8 +150,9 @@ using this bot's MT5 connection, broker clock offset, candles, calendar, news lo
 spread limits, Python SMC evidence, lessons playbook and Claude client. The signal bot above is
 unchanged and still never trades. Setup, safety rules and daily use: `docs/AUTO_TRADER.md`.
 Since 1.6 it also classifies the market state (trend layers, phase, volatility, momentum,
-expansion), uses session levels, runs new playbooks in paper mode, and ships a historical replay
-(`scripts/run_replay.ps1`) that compares the old and new rules on your MT5 history.
+expansion), uses session levels, and ships a historical replay (`scripts/run_replay.ps1`) that
+compares the old and new rules on your MT5 history. Later versions added the lab track (rule
+experiments at the minimum lot) and trade protection; see `docs/AUTO_TRADER.md` and `CHANGELOG.md`.
 
 ## More documentation
 

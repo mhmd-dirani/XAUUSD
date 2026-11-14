@@ -27,10 +27,6 @@ from datetime import datetime, timedelta
 TRIGGERS = ("BREAKOUT",)
 
 
-def level_lists(highs: list, lows: list) -> tuple[list, list]:
-    return sorted(set(highs)), sorted(set(lows), reverse=True)
-
-
 def candidate(e: dict, bar: dict, state: dict, atr15: float, highs: list, lows: list, as_of: datetime,
               session: str, sp: float, cfg: dict, drop=lambda why: None, against: list | None = None):
     """A BREAKOUT session event + its closed 15M candle -> an order plan dict or None (reason to drop).

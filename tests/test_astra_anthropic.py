@@ -339,7 +339,7 @@ class WorkerTests(unittest.TestCase):
 
 @unittest.skipIf(M is None, "bot monitor module not importable")
 class MonitorIntegrationTests(unittest.TestCase):
-    """Run inside the bot project after tools/apply_claude_analyst.py."""
+    """The Claude switch as wired into the bot's main module."""
 
     def test_real_schemas_are_structured_output_compatible(self):
         for name in ("MAP_SCHEMA", "REVIEW_SCHEMA", "NEWS_SCHEMA"):
@@ -377,136 +377,6 @@ class MonitorIntegrationTests(unittest.TestCase):
     def test_secret_redaction(self):
         with patch.dict(os.environ, {"ANTHROPIC_API_KEY": "sk-ant-secret-123"}):
             self.assertNotIn("sk-ant-secret-123", M.safe_error("bad key sk-ant-secret-123"))
-
-
-class PatcherTests(unittest.TestCase):
-    """tools/apply_claude_analyst.py on synthetic copies of the anchor regions."""
-
-    def setUp(self):
-        import apply_claude_analyst as P
-        self.P = P
-        self.dir = tempfile.TemporaryDirectory()
-        self.root = Path(self.dir.name)
-        self.paths = {}
-        for label, usual, _sig, edits, _req in P.FILES:
-            olds = [old[0] if isinstance(old, tuple) else old for _, old, _ in edits]
-            self.write(usual, "# head\n" + "\n# ---\n".join(olds) + "\n# tail\n")
-            self.paths[label] = self.root / usual
-        for rel in P.NEEDED:
-            self.write(rel, "# new\n")
-        self.write("requirements.txt", "openai>=1.0\njsonschema\n")
-        self.log = []
-
-    def write(self, rel, text):
-        (self.root / rel).parent.mkdir(parents=True, exist_ok=True)
-        (self.root / rel).write_bytes(text.encode("utf-8"))     # exact "\n" endings on every OS
-
-    def tearDown(self):
-        self.dir.cleanup()
-
-    def run_p(self, **kw):
-        return self.P.run(self.root, out=self.log.append, **kw)
-
-    def snapshot(self):
-        return {k: p.read_bytes() for k, p in self.paths.items()}
-
-    def test_apply_idempotent_with_backups(self):
-        self.assertEqual(self.run_p(), 0)
-        mon = self.paths["monitor"].read_text(encoding="utf-8")
-        self.assertIn("return AN.ai_worker(sys_module()", mon)
-        self.assertIn('"analyst_provider": "openai"', mon)
-        self.assertIn("anthropic>=", (self.root / "requirements.txt").read_text())
-        self.assertTrue((self.root / "src/gold_monitor_v51.py.pre_claude.bak").is_file())
-        before = self.snapshot()
-        self.assertEqual(self.run_p(), 0)                       # second run changes nothing
-        self.assertEqual(before, self.snapshot())
-        self.assertEqual((self.root / "requirements.txt").read_text().count("anthropic"), 1)
-
-    def test_renamed_monitor_found_by_content(self):
-        new = self.root / "src/gold_monitor.py"
-        self.paths["monitor"].rename(new)
-        self.paths["monitor"] = new
-        self.assertEqual(self.run_p(), 0)
-        self.assertIn("AN.validate_config(c)", new.read_text(encoding="utf-8"))
-        self.assertIn("src/gold_monitor.py: apply", "\n".join(self.log).replace("\\", "/"))
-
-    def test_ambiguous_monitor_needs_override(self):
-        text = self.paths["monitor"].read_text(encoding="utf-8")
-        self.paths["monitor"].unlink()
-        self.write("src/gold_monitor.py", text)
-        self.write("src/gold_monitor_old.py", text)
-        self.assertEqual(self.run_p(), 2)
-        self.assertIn("several candidates", "\n".join(self.log))
-        self.assertEqual(self.run_p(overrides={"monitor": "src/gold_monitor.py"}), 0)
-        self.assertIn("AN.validate_config(c)", (self.root / "src/gold_monitor.py").read_text(encoding="utf-8"))
-        self.assertNotIn("AN.", (self.root / "src/gold_monitor_old.py").read_text(encoding="utf-8"))
-
-    def test_old_monitor_beside_current_ignored(self):
-        self.write("src/gold_monitor_v5.py", AN.MONITOR_SIGNATURE + "\n    pass\n")      # V5: no V6 anchors
-        text = self.paths["monitor"].read_text(encoding="utf-8")
-        self.paths["monitor"].unlink()
-        self.write("src/gold_monitor.py", text)
-        self.assertEqual(self.run_p(), 0)
-        self.assertIn("AN.validate_config(c)", (self.root / "src/gold_monitor.py").read_text(encoding="utf-8"))
-        self.assertNotIn("AN.", (self.root / "src/gold_monitor_v5.py").read_text(encoding="utf-8"))
-
-    def test_missing_monitor_stops(self):
-        self.paths["monitor"].unlink()
-        self.assertEqual(self.run_p(), 2)
-        self.assertIn("monitor: no file containing", "\n".join(self.log))
-
-    def test_missing_optional_tool_skipped(self):
-        self.paths["dry run"].unlink()
-        self.assertEqual(self.run_p(), 0)
-        self.assertIn("dry run: skipped", "\n".join(self.log))
-        self.assertIn("AN.validate_config(c)", self.paths["monitor"].read_text(encoding="utf-8"))
-
-    def test_all_or_nothing(self):
-        p = self.paths["lessons"]
-        p.write_text(p.read_text().replace("def make_client(c):", "def make_client(cfg):"))
-        before = self.snapshot()
-        self.assertEqual(self.run_p(), 2)
-        self.assertIn("'client' anchor found 0 times", "\n".join(self.log))
-        self.assertEqual(before, self.snapshot())
-        self.assertFalse(any(self.root.rglob("*.pre_claude.bak")))
-
-    def test_check_writes_nothing(self):
-        before = self.snapshot()
-        self.assertEqual(self.run_p(check=True), 0)
-        self.assertEqual(before, self.snapshot())
-
-    def test_windows_line_endings_kept(self):
-        path = self.paths["monitor"]
-        self.assertNotIn(b"\r", path.read_bytes())
-        path.write_bytes(path.read_bytes().replace(b"\n", b"\r\n"))
-        self.assertEqual(self.run_p(), 0)
-        data = path.read_bytes()
-        self.assertIn(b"AN.validate_config(c)\r\n", data)
-        self.assertNotIn(b"\n", data.replace(b"\r\n", b""))
-
-    def test_renamed_test_list_variant(self):
-        p = self.paths["monitor"]
-        p.write_text(p.read_text().replace('"test_calendar_holiday_hotfix", "test_gold_v613", "test_astra_v6")',
-                                           '"test_calendar_holidays", "test_reliability", "test_astra")'))
-        self.assertEqual(self.run_p(), 0)
-        self.assertIn('"test_astra",\n             "test_astra_anthropic")', p.read_text())
-        self.assertEqual(self.run_p(), 0)
-
-    def test_upgrades_first_version_of_dry_run_option(self):
-        p = self.paths["dry run"]
-        lang = '    p.add_argument("--language", help="override telegram_language (Arabic/English)")\n'
-        v1 = (lang + '    p.add_argument("--analyst", choices=("openai", "anthropic"),\n'
-              '                   help="override analyst_provider (compare Astra on OpenAI vs Claude)")\n')
-        p.write_bytes(p.read_bytes().replace(lang.encode(), v1.encode()))
-        self.assertEqual(self.run_p(), 0)
-        text = p.read_text(encoding="utf-8")
-        self.assertIn('choices=("astra", "claude", "openai", "anthropic")', text)
-        self.assertNotIn('choices=("openai", "anthropic")', text)
-        self.assertIn("AN.normalize(args.analyst)", text)
-
-    def test_missing_new_files(self):
-        (self.root / "src/astra_anthropic.py").unlink()
-        self.assertEqual(self.run_p(), 1)
 
 
 class MonitorFinderTests(unittest.TestCase):

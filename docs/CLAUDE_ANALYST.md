@@ -16,26 +16,15 @@ is rejected exactly like a bad answer from OpenAI. There is still no order code 
 
 ## Install (Windows, once)
 
-1. Copy the new files into the project, keeping the folders:
-   - `src/astra_anthropic.py`
-   - `tests/test_astra_anthropic.py`
-   - `tools/apply_claude_analyst.py`
-   - `config/astra_instructions.md`
-   - `docs/CLAUDE_ANALYST.md`
-2. Preview the edits, then apply them:
-   ```powershell
-   .\.venv\Scripts\python.exe tools\apply_claude_analyst.py --check
-   .\.venv\Scripts\python.exe tools\apply_claude_analyst.py
-   ```
-   The script makes small edits to the monitor (`src/gold_monitor.py`), `tools/astra_dry_run.py`,
-   `tools/learn_lessons.py` and `requirements.txt`. If any file differs from V6.1.3 it changes
-   nothing and lists what didn't match. Originals are kept as `*.pre_claude.bak`.
-3. Install the SDK and run the tests:
+The Claude backend is part of the project (`src/astra_anthropic.py`, `config/astra_instructions.md`);
+there is nothing to copy or patch.
+
+1. Install the SDK and run the tests:
    ```powershell
    .\.venv\Scripts\python.exe -m pip install -U -r requirements.txt
    .\scripts\selftest.ps1          # must end with "OK"
    ```
-4. Set your Anthropic key (console.anthropic.com → API keys), then open a new PowerShell window:
+2. Set your Anthropic key (console.anthropic.com → API keys), then open a new PowerShell window:
    ```powershell
    setx ANTHROPIC_API_KEY "sk-ant-..."
    ```
@@ -45,7 +34,7 @@ is rejected exactly like a bad answer from OpenAI. There is still no order code 
    with `wrkspc_`), then run `setx ANTHROPIC_WORKSPACE_ID "wrkspc_..."`. Without it Claude answers
    "anthropic-workspace-id is required" or "not scoped to a workspace". The bot sends the key as
    `Authorization: Bearer`, the method Anthropic documents for all key types.
-5. Optional, but recommended for a fair comparison: give Claude exactly the role text your saved
+3. Optional, but recommended for a fair comparison: give Claude exactly the role text your saved
    OpenAI agent uses. This overwrites `config/astra_instructions.md` and keeps a `.bak` copy:
    ```powershell
    .\.venv\Scripts\python.exe src\astra_anthropic.py --export-openai-instructions

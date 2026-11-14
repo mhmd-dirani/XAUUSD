@@ -1,0 +1,46 @@
+TYPE: CONCEPT
+QUESTION: Why are these marked as ob, bbr and spring? Explain each one and the dotted x level.
+MY VIEW: This is a bullish reversal setup involving a bearish order block, a breaker area and a spring below support.
+
+Answer:
+Yes.
+The marked areas represent:
+- OB = Order Block zone
+- BBR = Breaker Block Retest zone
+A breaker forms when:
+1. Original OB fails.
+2. Price breaks through it.
+3. The old OB becomes support/resistance on retest.
+Use both:
+- Body = preferred entry zone.
+- Full candle wick = invalidation boundary.
+For a conservative system:
+Entry:
+- body or 50% of zone.
+Stop:
+- beyond wick.
+Correction:
+Below support are usually sell-side liquidity (the stop losses of long traders).
+The spring setup works because:
+1. Price sweeps sell-side liquidity below support.
+2. Smart money absorbs selling.
+3. Price reclaims the level.
+4. Bullish reversal begins.
+So the correct wording:
+"The spring takes sell-side liquidity below support before reversing upward."
+Answer:
+For a true OB failure:
+- Close beyond the wick = definitive failure.
+- Close beyond body = warning that the OB is weakening.
+Astra should not mark an OB invalid from one wick.
+Answer:
+Reclaiming X alone is not enough.
+A proper spring setup requires:
+1. Liquidity sweep below support.
+2. Price reclaims the broken level.
+3. BBR/breaker area is reclaimed or respected.
+4. Bullish MSS/CHOCH confirms.
+Hierarchy:
+- Reclaim only → potential reversal.
+- Reclaim + breaker reclaim → stronger.
+- Reclaim + breaker + MSS → high-quality setup.

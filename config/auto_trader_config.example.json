@@ -1,0 +1,148 @@
+{
+  "_comment": "Auto-trader 1.10 (DEMO). Market settings come from v6_config. source signal_bot = no Claude calls. Ideas are graded into tiers A/B/C by Python and sized by tiers.risk_pct. lab_mode (demo only) trades every rejected idea at the minimum lot and records the rules it broke. See docs/AUTO_TRADER.md.",
+  "v6_config": "config/gold_v5_config.json",
+  "source": "signal_bot",
+  "signal_bot_signals": true,
+  "signal_bot_ideas": true,
+  "idea_min_confidence": 0,
+  "idea_allowed_risk": [
+    "LOW",
+    "MEDIUM",
+    "HIGH"
+  ],
+  "idea_a_grade_confidence": 60,
+  "idea_order_hours": 12,
+  "idea_max_age_minutes": 200,
+  "idea_entry_mode": "confirmation",
+  "counter_trend_enabled": true,
+  "counter_timeframes": [
+    "1day",
+    "4h",
+    "1week"
+  ],
+  "counter_min_tests": 2,
+  "counter_zone_tolerance": 3.0,
+  "confirm_retest_hours": 4,
+  "idea_require_evidence": false,
+  "signal_max_age_seconds": 90,
+  "signal_entry_tolerance": 1.0,
+  "bridge_poll_seconds": 2,
+  "playbook_modes": {
+    "TREND": "live",
+    "COUNTER_TREND": "live",
+    "REVERSAL_TRANSITION": "off",
+    "SESSION_SWEEP": "off",
+    "BREAKOUT_CONTINUATION": "live"
+  },
+  "python_session_setups": "off",
+  "expansion_filter": "shadow",
+  "regime": {},
+  "sessions": {
+    "ASIA": {
+      "tz": "Asia/Tokyo",
+      "start": "09:00",
+      "end": "15:00"
+    },
+    "LONDON": {
+      "tz": "Europe/London",
+      "start": "08:00",
+      "end": "16:30"
+    },
+    "NEW_YORK": {
+      "tz": "America/New_York",
+      "start": "08:00",
+      "end": "17:00"
+    }
+  },
+  "opening_range_minutes": {
+    "LONDON": 60,
+    "NEW_YORK": 60
+  },
+  "telegram_trades": true,
+  "require_demo": true,
+  "require_trader_terminal": true,
+  "magic": 40001,
+  "magic_scalp": 40002,
+  "execute_grades": [
+    "A_TRADE",
+    "B_TRADE"
+  ],
+  "risk_percent": {
+    "A_TRADE": 0.5,
+    "B_TRADE": 0.25
+  },
+  "min_rr": null,
+  "sl_atr_min": 0.5,
+  "sl_atr_max": 5.0,
+  "require_evidence": true,
+  "block_on_mtf_opposition": null,
+  "allow_market_orders": true,
+  "max_entry_deviation_cap": 3.0,
+  "min_order_lifetime_minutes": 15,
+  "max_order_lifetime_hours": 48,
+  "max_active_orders": 2,
+  "max_open_positions": 2,
+  "max_pending_orders": 2,
+  "max_orders_per_analysis": 2,
+  "max_total_risk_pct": 1.0,
+  "max_orders_per_setup_per_day": 2,
+  "duplicate_atr": 0.5,
+  "max_trades_per_day": 4,
+  "daily_loss_limit_pct": 2.0,
+  "weekly_loss_limit_pct": 5.0,
+  "analysis_every_minutes": 60,
+  "analyse_on_start": true,
+  "zone_trigger": true,
+  "zone_trigger_atr": 0.25,
+  "zone_trigger_cooldown_minutes": 45,
+  "skip_minutes_after_open": 30,
+  "skip_minutes_before_close": 20,
+  "close_delay_seconds": 10,
+  "monitor_interval_seconds": 20,
+  "max_consecutive_api_failures": 3,
+  "anthropic_model": null,
+  "anthropic_effort": "medium",
+  "max_output_tokens": 16000,
+  "prompt_file": "config/auto_trader_prompt.md",
+  "candles_per_timeframe": {
+    "1day": 60,
+    "4h": 120,
+    "1h": 120,
+    "15min": 120
+  },
+  "state_directory": "runtime_trader",
+  "telegram_errors": true,
+  "max_same_direction_positions": 1,
+  "tiers": {
+    "A": {
+      "risk_pct": 1.0,
+      "min_confidence": 40
+    },
+    "B": {
+      "risk_pct": 0.5,
+      "min_confidence": 35
+    },
+    "C": {
+      "risk_pct": 0.15,
+      "min_confidence": 30,
+      "min_lot_if_below": true
+    }
+  },
+  "tier_cap": {
+    "BREAKOUT_CONTINUATION": "C"
+  },
+  "breakout_retest_minutes": 60,
+  "trade_sessions": [
+    "LONDON",
+    "LONDON_NY",
+    "NEW_YORK"
+  ],
+  "confirm_entry_tolerance": 3.0,
+  "lab_mode": false,
+  "magic_lab": 40003,
+  "lab_lots": 0.0,
+  "lab_max_open": 6,
+  "lab_max_per_day": 20,
+  "lab_drawdown_kill_pct": 15.0,
+  "lab_unconfirmed_entry": true
+}

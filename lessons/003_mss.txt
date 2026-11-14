@@ -1,0 +1,29 @@
+TYPE: CONCEPT
+QUESTION: Why is this marked as an MSS? What do the circles mean and which candle confirms it?
+MY VIEW: Price recovers from the lows, approaches the marked resistance area and eventually breaks above the MSS level with bullish displacement. Although a pullback is possible, the structural bias has shifted bullish. I would BUY.
+Answer:
+The blue circles mark important swing points/liquidity points used to identify the market structure shift.
+They are not entries.
+They represent:
+- Previous protected high/low.
+- Liquidity area.
+- Structure reference.
+Yes.
+The MSS confirmation requires:
+1. Price breaks the previous protected swing.
+2. A candle closes beyond the MSS level.
+3. Ideally displacement occurs.
+The long green candle is the confirmation candle.
+Require a close.
+A wick above MSS is only a liquidity sweep.
+Rules:
+- Wick through MSS → not confirmed.
+- Close above MSS → confirmed.
+- Strong displacement after close → high-quality MSS.
+In this example:
+- The lower blue circle near the bottom represents the liquidity/sell-side sweep area.
+- The upper structure level near the MSS line represents the protected high that must be broken.
+The circle itself is not the confirmation. The important event is:
+1. Liquidity is taken.
+2. Price displaces upward.
+3. Protected high breaks with a close.

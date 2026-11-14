@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+*.pyc
+runtime/
+gold_v4_data/
+config/gold_v5_config.json
+data/*.db
+data/*.xlsx
+*.bak
+runtime_dryrun/
+runtime_trader/
+replay_data/
+config/secrets.env
+APIs.txt
+.claude/settings.local.json

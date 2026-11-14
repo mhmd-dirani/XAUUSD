@@ -1,0 +1,30 @@
+TYPE: CONCEPT
+QUESTION: Why is this zone marked as an FVG? Explain which candles create it and where its top, bottom and middle are.
+MY VIEW: Price falls aggressively, leaving a bearish fair value gap. It then retraces into that imbalance and fails to establish sustained trading above it. At the right edge, the market has rejected the FVG and resumed declining. That supports a bearish continuation bias, ideally following a pullback and bearish confirmation.
+Answer: Yes, in this example: - Red line = top of the FVG = LOW of the candle before the displacement candle.
+- Black line = bottom of the FVG = HIGH of the candle after the displacement candle.
+- Green line = 50% equilibrium of the FVG. The FVG is the imbalance created by the strong displacement candle.
+A bearish failure means price cannot maintain acceptance above the FVG.
+Valid bearish confirmation:
+1. Price enters the FVG.
+2. Price rejects from the FVG.
+3. A candle closes back below the FVG midpoint or lower boundary.
+4. Preferably a lower timeframe structure break (MSS/CHOCH) occurs.
+A wick above the FVG alone is not enough.
+Confirmation priority:
+1. Close back below FVG → strongest.
+2. Bearish rejection candle → supporting evidence.
+3. Break of local low → execution confirmation.
+A close below the 50% equilibrium line is a valid early warning confirmation, but not a full invalidation.
+Use three levels:
+1. Close below 50%
+   - Indicates sellers are defending the imbalance.
+   - Can be used as an initial confirmation.
+2. Close below the FVG bottom edge
+   - Stronger bearish confirmation.
+   - Shows the entire imbalance failed to hold.
+3. Break of nearby structure after rejection
+   - Highest-quality confirmation for entry.
+Astra should classify:
+- Below 50% = "FVG rejection developing"
+- Below bottom edge + structure break = "confirmed bearish continuation"

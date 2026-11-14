@@ -1,0 +1,8 @@
+# Gold Monitor V6.1.3 — Python 3.10+ (tested with 3.13 and 3.14)
+MetaTrader5>=5.0.45 ; sys_platform == "win32"   # read-only MT5 data (Windows only)
+openai>=3.13                                      # Responses API + saved Astra agent (beta.agents)
+requests>=2.31
+jsonschema>=4.21
+tzdata>=2024.1
+websocket-client>=1.7                             # only for the optional Twelve Data stream
+anthropic>=1.13

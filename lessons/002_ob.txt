@@ -1,0 +1,51 @@
+TYPE: CONCEPT
+QUESTION: Why is the candle at the arrow marked as an order block, and why is the level drawn exactly there?
+MY VIEW: The market initially moves strongly downward, establishing bearish structure. Price subsequently rallies back to the original bearish order-block area (black horizontal line and green rectangle). I would expect sellers to defend this zone. I would SELL.
+Answer:
+The OB is the last opposing candle before the displacement move.
+In this example:
+- The OB is the small bullish candle before the large bearish expansion.
+- The large red candle is the displacement candle, not the OB.
+For a bearish OB:
+Last bullish candle before strong bearish displacement.
+
+For a bullish OB:
+Last bearish candle before strong bullish displacement.
+
+The OB is a zone, not a single line.
+Default definition:
+- Body = main decision area.
+- Full wick range = extended zone.
+For conservative entries:
+- Entry zone: candle body.
+- Invalidation: beyond the full wick.
+Yes, a valid OB should normally create meaningful displacement.
+Strong OB requirements:
+1. Opposing candle exists.
+2. Strong displacement follows.
+3. Displacement breaks structure (BOS/MSS) or removes liquidity.
+4. Price leaves imbalance/FVG.
+Without displacement, it is only a normal candle.
+A bearish OB is invalidated when:
+- Price closes decisively above the OB zone.
+- Market accepts above the zone.
+- The structure that created the OB is no longer valid.
+A wick above does not automatically invalidate it.
+No.
+The line should not be considered only the close.
+For a bearish OB:
+- The zone is the last bullish candle before bearish displacement.
+- The upper boundary is normally the candle high.
+- The lower boundary is normally the candle open/body area.
+Preferred execution zone:
+- Body of the candle.
+- 50% of the candle range.
+The wick is used mainly for invalidation.
+For an OB invalidation:
+- A wick above the OB does not invalidate it.
+- A close above the OB body shows weakness.
+- A close above the full wick shows strong invalidation.
+Priority:
+1. Close above wick = OB invalidated.
+2. Multiple closes above body = OB likely invalidated.
+3. Single wick above = liquidity sweep possible.

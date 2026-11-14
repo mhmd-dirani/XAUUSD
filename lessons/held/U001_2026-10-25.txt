@@ -1,0 +1,7 @@
+QUESTION: XAUUSD SELL plan at 4009.0-4016.0, stop 4024.5, targets [3977.0, 3960.0, 3940.0] on 2026-10-25. Would you take it? Where?
+MY VIEW: SELL from 4009.0-4016.0 because:
+- breaker + 15M FVG overlap at the OTE
+- daily close below 4073, all frames bearish
+- no retest yet after the Michigan sell-off
+Astra's map: Astra's map agrees: idea I1 SELL 4009.11-4016.22, confidence 40%, class TREND
+OUTCOME: STOP_WICK -1.06R | MFE 0.28R MAE -1.26R | 4h after STOP_SIDE | verdict WRONG_IDEA

@@ -1,0 +1,37 @@
+TYPE: CONCEPT
+QUESTION: Why did I draw these two lines exactly here? What makes each one a valid level?
+MY VIEW: Price returns to the old bearish order-block level, briefly trades above it, and then experiences strong bearish rejection. The rightmost candles show renewed downward pressure, with price approaching the lower support line. I would favour selling after a failed bullish retest, but avoid opening a fresh short directly into support.
+Answer:
+The old OB is the last opposing candle before the strong move away from that area.
+The exact line is not chosen randomly.
+It comes from:
+- The candle body where institutional orders were likely placed.
+- The origin of the displacement.
+Because the zone represents the reaction area, not simply the absolute extreme.
+The lowest wick may represent:
+- Liquidity sweep.
+- Stop hunt.
+- Temporary rejection.
+The support zone should be based on:
+- Repeated reactions.
+- Order flow origin.
+- Accepted price area.
+The extreme wick can be considered liquidity, but not always the true support.
+Neither alone.
+The zone should be:
+- Body area = primary OB zone.
+- Full candle range = extended zone.
+For automation:
+Entry zone:
+body open → body close
+
+Invalidation:
+beyond candle wick
+
+Yes, preferably.
+A failed bearish retest:
+1. Price enters OB.
+2. Rejects.
+3. Closes back below the OB zone.
+4. Breaks a nearby low.
+A wick rejection alone is weaker.
